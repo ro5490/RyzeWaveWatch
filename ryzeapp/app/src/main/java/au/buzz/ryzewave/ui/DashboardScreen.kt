@@ -1,5 +1,9 @@
 package au.buzz.ryzewave.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,17 +31,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -47,20 +46,24 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import au.buzz.ryzewave.core.BloodPressureReading
 import au.buzz.ryzewave.core.ConnectionState
 import au.buzz.ryzewave.core.DailySummary
+import au.buzz.ryzewave.core.HrSample
+import au.buzz.ryzewave.core.RestingHr
+import au.buzz.ryzewave.core.SleepStage
+import au.buzz.ryzewave.core.WatchStatus
+import au.buzz.ryzewave.core.Workout
 import au.buzz.ryzewave.protocol.SportTypes
 import au.buzz.ryzewave.workout.FitnessBand
 import au.buzz.ryzewave.workout.HeartRateRecovery
-import au.buzz.ryzewave.core.Workout
-import au.buzz.ryzewave.core.RestingHr
-import au.buzz.ryzewave.core.HrSample
-import au.buzz.ryzewave.core.SleepStage
-import au.buzz.ryzewave.core.WatchStatus
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
-fun DashboardScreen(vm: DashboardViewModel = viewModel()) {
+fun DashboardScreen(
+    vm: DashboardViewModel = viewModel()
+) {
     val status by vm.status.collectAsStateWithLifecycle()
     val today by vm.today.collectAsStateWithLifecycle()
     val sleep by vm.sleep.collectAsStateWithLifecycle()
@@ -70,46 +73,116 @@ fun DashboardScreen(vm: DashboardViewModel = viewModel()) {
     val restingHr by vm.restingHr.collectAsStateWithLifecycle()
     val recovery by vm.recovery.collectAsStateWithLifecycle()
     val measuring by vm.measuring.collectAsStateWithLifecycle()
+
+    // P32 legacy UTE/GloryFit blood-pressure result.
+    val bloodPressure by vm.bloodPressure.collectAsStateWithLifecycle()
+
     val message by vm.message.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
-    MessageSnackbar(message, vm::clearMessage, snackbar)
-    LaunchedEffect(Unit) { vm.refreshDay() }
+
+    val snackbar =
+        remember {
+            SnackbarHostState()
+        }
+
+    MessageSnackbar(
+        message,
+        vm::clearMessage,
+        snackbar
+    )
+
+    LaunchedEffect(Unit) {
+        vm.refreshDay()
+    }
+
     // A slow clock so "Last sync … ago" and the "(live)" HR label age while the screen stays open.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var now by remember {
+        mutableLongStateOf(
+            System.currentTimeMillis()
+        )
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             delay(5_000L)
-            now = System.currentTimeMillis()
-        }
-    }
-    // Connect needs BLUETOOTH_CONNECT (Android 12+): ask for it here when the startup prompt was refused.
-    val bluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if (vm.hasBluetoothPermission()) vm.connect()
-    }
-    val onConnect: () -> Unit = {
-        if (vm.hasBluetoothPermission() || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            vm.connect()
-        } else {
-            bluetoothLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN))
+            now =
+                System.currentTimeMillis()
         }
     }
 
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+    // Connect needs BLUETOOTH_CONNECT (Android 12+): ask for it here when the startup prompt was refused.
+    val bluetoothLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { _ ->
+            if (vm.hasBluetoothPermission()) {
+                vm.connect()
+            }
+        }
+
+    val onConnect: () -> Unit = {
+        if (
+            vm.hasBluetoothPermission() ||
+            Build.VERSION.SDK_INT <
+            Build.VERSION_CODES.S
+        ) {
+            vm.connect()
+        } else {
+            bluetoothLauncher.launch(
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.BLUETOOTH_SCAN
+                )
+            )
+        }
+    }
+
+    Scaffold(
+        snackbarHost = {
+            SnackbarHost(snackbar)
+        }
+    ) { padding ->
+
         Column(
             Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(
+                    rememberScrollState()
+                )
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement =
+                Arrangement.spacedBy(12.dp),
         ) {
-            ConnectionCard(status, busy, now, onConnect, vm::disconnect, vm::sync)
-            StepsCard(today, profile.stepGoal)
-            VitalsCard(
-                today = today, liveHr = liveHr, restingHr = restingHr, recovery = recovery,
-                measuring = measuring, busy = busy, now = now,
-                connected = status.isConnected(), onMeasureHr = vm::measureHr, onSpo2 = vm::spo2Test,
+
+            ConnectionCard(
+                status,
+                busy,
+                now,
+                onConnect,
+                vm::disconnect,
+                vm::sync
             )
+
+            StepsCard(
+                today,
+                profile.stepGoal
+            )
+
+            VitalsCard(
+                today = today,
+                liveHr = liveHr,
+                restingHr = restingHr,
+                recovery = recovery,
+                bloodPressure = bloodPressure,
+                measuring = measuring,
+                busy = busy,
+                now = now,
+                connected = status.isConnected(),
+                onMeasureHr = vm::measureHr,
+                onSpo2 = vm::spo2Test,
+                onBloodPressure = vm::bloodPressureTest,
+            )
+
             SleepCard(sleep)
         }
     }
@@ -117,7 +190,11 @@ fun DashboardScreen(vm: DashboardViewModel = viewModel()) {
 
 /** Shows each non-null [message] once in [host], then calls [onShown]. */
 @Composable
-fun MessageSnackbar(message: String?, onShown: () -> Unit, host: SnackbarHostState) {
+fun MessageSnackbar(
+    message: String?,
+    onShown: () -> Unit,
+    host: SnackbarHostState
+) {
     LaunchedEffect(message) {
         if (message != null) {
             host.showSnackbar(message)
@@ -127,22 +204,57 @@ fun MessageSnackbar(message: String?, onShown: () -> Unit, host: SnackbarHostSta
 }
 
 fun WatchStatus.isConnected(): Boolean =
-    state == ConnectionState.CONNECTED || state == ConnectionState.SYNCING
+    state == ConnectionState.CONNECTED ||
+        state == ConnectionState.SYNCING
 
-fun connectionLabel(s: WatchStatus): String = when (s.state) {
-    ConnectionState.DISCONNECTED -> "Disconnected"
-    ConnectionState.CONNECTING -> "Connecting…"
-    ConnectionState.CONNECTED -> "Connected"
-    ConnectionState.SYNCING -> "Syncing…"
-    ConnectionState.ERROR -> "Error" + (s.message?.let { ": $it" } ?: "")
-}
+fun connectionLabel(
+    s: WatchStatus
+): String =
+    when (s.state) {
+
+        ConnectionState.DISCONNECTED ->
+            "Disconnected"
+
+        ConnectionState.CONNECTING ->
+            "Connecting…"
+
+        ConnectionState.CONNECTED ->
+            "Connected"
+
+        ConnectionState.SYNCING ->
+            "Syncing…"
+
+        ConnectionState.ERROR ->
+            "Error" +
+                (
+                    s.message?.let {
+                        ": $it"
+                    } ?: ""
+                )
+    }
 
 /** Small label-over-value block used in the cards. */
 @Composable
-fun StatText(label: String, value: String, modifier: Modifier = Modifier) {
+fun StatText(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
     Column(modifier) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleMedium)
+
+        Text(
+            label,
+            style =
+                MaterialTheme.typography.labelMedium,
+            color =
+                MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Text(
+            value,
+            style =
+                MaterialTheme.typography.titleMedium
+        )
     }
 }
 
@@ -155,54 +267,237 @@ private fun ConnectionCard(
     onDisconnect: () -> Unit,
     onSync: () -> Unit,
 ) {
-    val working = busy || status.state == ConnectionState.CONNECTING || status.state == ConnectionState.SYNCING
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Watch, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Ryze Wave", style = MaterialTheme.typography.titleMedium)
-                    Text(connectionLabel(status), style = MaterialTheme.typography.bodyMedium)
-                    status.mac?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    val working =
+        busy ||
+            status.state ==
+            ConnectionState.CONNECTING ||
+            status.state ==
+            ConnectionState.SYNCING
+
+    ElevatedCard(
+        Modifier.fillMaxWidth()
+    ) {
+
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement =
+                Arrangement.spacedBy(12.dp)
+        ) {
+
+            Row(
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+
+                Icon(
+                    Icons.Filled.Watch,
+                    contentDescription = null,
+                    tint =
+                        MaterialTheme.colorScheme.primary
+                )
+
+                Spacer(
+                    Modifier.width(12.dp)
+                )
+
+                Column(
+                    Modifier.weight(1f)
+                ) {
+
+                    Text(
+                        "Ryze Wave",
+                        style =
+                            MaterialTheme.typography.titleMedium
+                    )
+
+                    Text(
+                        connectionLabel(status),
+                        style =
+                            MaterialTheme.typography.bodyMedium
+                    )
+
+                    status.mac?.let {
+
+                        Text(
+                            it,
+                            style =
+                                MaterialTheme.typography.labelSmall,
+                            color =
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                if (working) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+
+                if (working) {
+                    CircularProgressIndicator(
+                        Modifier.size(22.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                val battery = status.batteryPercent?.let { "$it %" + (if (status.charging) " ⚡" else "") } ?: "–"
-                StatText("Battery", battery, Modifier.weight(1f))
-                StatText("Last sync", Fmt.relative(status.lastSyncTime, now), Modifier.weight(1f))
+
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(20.dp)
+            ) {
+
+                val battery =
+                    status.batteryPercent?.let {
+                        "$it %" +
+                            (
+                                if (status.charging) {
+                                    " ⚡"
+                                } else {
+                                    ""
+                                }
+                            )
+                    } ?: "–"
+
+                StatText(
+                    "Battery",
+                    battery,
+                    Modifier.weight(1f)
+                )
+
+                StatText(
+                    "Last sync",
+                    Fmt.relative(
+                        status.lastSyncTime,
+                        now
+                    ),
+                    Modifier.weight(1f)
+                )
             }
-            StatText("Firmware", status.firmware ?: "–")
-            if (status.state != ConnectionState.ERROR) {
-                status.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+
+            StatText(
+                "Firmware",
+                status.firmware ?: "–"
+            )
+
+            if (
+                status.state !=
+                ConnectionState.ERROR
+            ) {
+
+                status.message?.let {
+
+                    Text(
+                        it,
+                        style =
+                            MaterialTheme.typography.bodySmall,
+                        color =
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+
                 if (status.isConnected()) {
-                    OutlinedButton(onClick = onDisconnect, enabled = !busy) { Text("Disconnect") }
+
+                    OutlinedButton(
+                        onClick = onDisconnect,
+                        enabled = !busy
+                    ) {
+                        Text("Disconnect")
+                    }
+
                 } else {
-                    Button(onClick = onConnect, enabled = !working) { Text("Connect") }
+
+                    Button(
+                        onClick = onConnect,
+                        enabled = !working
+                    ) {
+                        Text("Connect")
+                    }
                 }
-                FilledTonalButton(onClick = onSync, enabled = status.isConnected() && !working) { Text("Sync now") }
+
+                FilledTonalButton(
+                    onClick = onSync,
+                    enabled =
+                        status.isConnected() &&
+                            !working
+                ) {
+                    Text("Sync now")
+                }
             }
         }
     }
 }
 
 @Composable
-private fun StepsCard(today: DailySummary?, goal: Int) {
-    val steps = today?.steps ?: 0
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            GoalRing(steps, goal)
-            Spacer(Modifier.width(20.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Today", style = MaterialTheme.typography.titleMedium)
-                StatText("Goal", "${Fmt.int(goal)} steps")
-                StatText("Distance", Fmt.km(today?.distanceMeters ?: 0.0))
-                StatText("Walk / run", "${Fmt.int(today?.walkSteps ?: 0)} / ${Fmt.int(today?.runSteps ?: 0)}")
-                val workoutSteps = today?.workoutSteps ?: 0
-                if (workoutSteps > 0) StatText("Workout", "${Fmt.int(workoutSteps)} steps")
+private fun StepsCard(
+    today: DailySummary?,
+    goal: Int
+) {
+    val steps =
+        today?.steps ?: 0
+
+    ElevatedCard(
+        Modifier.fillMaxWidth()
+    ) {
+
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment =
+                Alignment.CenterVertically
+        ) {
+
+            GoalRing(
+                steps,
+                goal
+            )
+
+            Spacer(
+                Modifier.width(20.dp)
+            )
+
+            Column(
+                verticalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+
+                Text(
+                    "Today",
+                    style =
+                        MaterialTheme.typography.titleMedium
+                )
+
+                StatText(
+                    "Goal",
+                    "${Fmt.int(goal)} steps"
+                )
+
+                StatText(
+                    "Distance",
+                    Fmt.km(
+                        today?.distanceMeters
+                            ?: 0.0
+                    )
+                )
+
+                StatText(
+                    "Walk / run",
+                    "${Fmt.int(today?.walkSteps ?: 0)} / ${
+                        Fmt.int(
+                            today?.runSteps ?: 0
+                        )
+                    }"
+                )
+
+                val workoutSteps =
+                    today?.workoutSteps ?: 0
+
+                if (workoutSteps > 0) {
+
+                    StatText(
+                        "Workout",
+                        "${Fmt.int(workoutSteps)} steps"
+                    )
+                }
             }
         }
     }
@@ -210,23 +505,116 @@ private fun StepsCard(today: DailySummary?, goal: Int) {
 
 /** Steps-vs-goal ring, drawn on a Canvas with the count in the middle. */
 @Composable
-fun GoalRing(steps: Int, goal: Int, modifier: Modifier = Modifier) {
-    val fraction = if (goal > 0) (steps.toFloat() / goal).coerceIn(0f, 1f) else 0f
-    val track = MaterialTheme.colorScheme.surfaceVariant
-    val fill = if (steps >= goal && goal > 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
-    Box(modifier.size(124.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val stroke = 12.dp.toPx()
-            val inset = stroke / 2f
-            val arcSize = Size(size.width - stroke, size.height - stroke)
-            drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+fun GoalRing(
+    steps: Int,
+    goal: Int,
+    modifier: Modifier = Modifier
+) {
+    val fraction =
+        if (goal > 0) {
+            (
+                steps.toFloat() /
+                    goal
+                )
+                .coerceIn(
+                    0f,
+                    1f
+                )
+        } else {
+            0f
+        }
+
+    val track =
+        MaterialTheme.colorScheme.surfaceVariant
+
+    val fill =
+        if (
+            steps >= goal &&
+            goal > 0
+        ) {
+            MaterialTheme.colorScheme.tertiary
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
+
+    Box(
+        modifier.size(124.dp),
+        contentAlignment =
+            Alignment.Center
+    ) {
+
+        Canvas(
+            Modifier.fillMaxSize()
+        ) {
+
+            val stroke =
+                12.dp.toPx()
+
+            val inset =
+                stroke / 2f
+
+            val arcSize =
+                Size(
+                    size.width - stroke,
+                    size.height - stroke
+                )
+
+            drawArc(
+                track,
+                0f,
+                360f,
+                false,
+                Offset(
+                    inset,
+                    inset
+                ),
+                arcSize,
+                style =
+                    Stroke(
+                        stroke,
+                        cap =
+                            StrokeCap.Round
+                    )
+            )
+
             if (fraction > 0f) {
-                drawArc(fill, -90f, 360f * fraction, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+
+                drawArc(
+                    fill,
+                    -90f,
+                    360f * fraction,
+                    false,
+                    Offset(
+                        inset,
+                        inset
+                    ),
+                    arcSize,
+                    style =
+                        Stroke(
+                            stroke,
+                            cap =
+                                StrokeCap.Round
+                        )
+                )
             }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(Fmt.int(steps), style = MaterialTheme.typography.titleLarge)
-            Text("${(fraction * 100).roundToInt()} %", style = MaterialTheme.typography.labelSmall)
+
+        Column(
+            horizontalAlignment =
+                Alignment.CenterHorizontally
+        ) {
+
+            Text(
+                Fmt.int(steps),
+                style =
+                    MaterialTheme.typography.titleLarge
+            )
+
+            Text(
+                "${(fraction * 100).roundToInt()} %",
+                style =
+                    MaterialTheme.typography.labelSmall
+            )
         }
     }
 }
@@ -237,68 +625,327 @@ private fun VitalsCard(
     liveHr: HrSample?,
     restingHr: RestingHr?,
     recovery: Workout?,
+    bloodPressure: BloodPressureReading?,
     measuring: Boolean,
     busy: Boolean,
     now: Long,
     connected: Boolean,
     onMeasureHr: () -> Unit,
     onSpo2: () -> Unit,
+    onBloodPressure: () -> Unit,
 ) {
-    val live = liveHr?.takeIf { now - it.time < 15_000L }
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Vitals", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                val hr = today?.lastHr
+    val live =
+        liveHr?.takeIf {
+            now - it.time <
+                15_000L
+        }
+
+    ElevatedCard(
+        Modifier.fillMaxWidth()
+    ) {
+
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement =
+                Arrangement.spacedBy(12.dp)
+        ) {
+
+            Text(
+                "Vitals",
+                style =
+                    MaterialTheme.typography.titleMedium
+            )
+
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(24.dp)
+            ) {
+
+                val hr =
+                    today?.lastHr
+
                 StatText(
-                    label = if (live != null) "Heart rate (live)" else "Heart rate",
-                    value = when {
-                        live != null -> "${live.bpm} bpm"
-                        hr != null -> "${hr.bpm} bpm"
-                        else -> "–"
-                    },
+                    label =
+                        if (live != null) {
+                            "Heart rate (live)"
+                        } else {
+                            "Heart rate"
+                        },
+                    value =
+                        when {
+                            live != null ->
+                                "${live.bpm} bpm"
+
+                            hr != null ->
+                                "${hr.bpm} bpm"
+
+                            else ->
+                                "–"
+                        },
                 )
-                if (live == null && hr != null) StatText("at", Fmt.time(hr.time))
-                val ranges = today?.let { t -> if (t.minHr != null && t.maxHr != null) "${t.minHr}–${t.maxHr}" else null }
-                if (ranges != null) StatText("Min–max", ranges)
+
+                if (
+                    live == null &&
+                    hr != null
+                ) {
+
+                    StatText(
+                        "at",
+                        Fmt.time(hr.time)
+                    )
+                }
+
+                val ranges =
+                    today?.let { t ->
+                        if (
+                            t.minHr != null &&
+                            t.maxHr != null
+                        ) {
+                            "${t.minHr}–${t.maxHr}"
+                        } else {
+                            null
+                        }
+                    }
+
+                if (ranges != null) {
+
+                    StatText(
+                        "Min–max",
+                        ranges
+                    )
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                val spo2 = today?.lastSpo2
-                StatText("Blood oxygen", spo2?.let { "${it.percent} %" } ?: "–")
-                if (spo2 != null) StatText("at", Fmt.time(spo2.time))
+
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(24.dp)
+            ) {
+
+                val spo2 =
+                    today?.lastSpo2
+
+                StatText(
+                    "Blood oxygen",
+                    spo2?.let {
+                        "${it.percent} %"
+                    } ?: "–"
+                )
+
+                if (spo2 != null) {
+
+                    StatText(
+                        "at",
+                        Fmt.time(spo2.time)
+                    )
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                StatText("Resting HR", restingHr?.let { "${it.bpm} bpm" } ?: "–")
-                if (restingHr != null) StatText("fitness", FitnessBand.ofDaytime(restingHr.bpm).label)
-                if (restingHr != null) StatText("as at", "${Fmt.shortDate(restingHr.computedAt)} ${Fmt.time(restingHr.computedAt)}")
+
+            /*
+             * First P32 BP implementation:
+             *
+             * Kept in memory only for now. Once C7 spot measurement is
+             * confirmed on the real watch we can add repository/history
+             * persistence and C8 FA history synchronization.
+             */
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(24.dp)
+            ) {
+
+                StatText(
+                    "Blood pressure",
+                    bloodPressure?.let {
+                        "${it.systolic}/${it.diastolic} mmHg"
+                    } ?: "–"
+                )
+
+                if (bloodPressure != null) {
+
+                    StatText(
+                        "at",
+                        Fmt.time(
+                            bloodPressure.time
+                        )
+                    )
+                }
             }
-            val sleepBpm = restingHr?.sleepBpm
+
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(24.dp)
+            ) {
+
+                StatText(
+                    "Resting HR",
+                    restingHr?.let {
+                        "${it.bpm} bpm"
+                    } ?: "–"
+                )
+
+                if (restingHr != null) {
+
+                    StatText(
+                        "fitness",
+                        FitnessBand
+                            .ofDaytime(
+                                restingHr.bpm
+                            )
+                            .label
+                    )
+
+                    StatText(
+                        "as at",
+                        "${Fmt.shortDate(restingHr.computedAt)} ${
+                            Fmt.time(
+                                restingHr.computedAt
+                            )
+                        }"
+                    )
+                }
+            }
+
+            val sleepBpm =
+                restingHr?.sleepBpm
+
             if (sleepBpm != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    StatText("Sleeping HR", "$sleepBpm bpm")
-                    StatText("fitness", FitnessBand.ofSleeping(sleepBpm).label)
+
+                Row(
+                    horizontalArrangement =
+                        Arrangement.spacedBy(24.dp)
+                ) {
+
+                    StatText(
+                        "Sleeping HR",
+                        "$sleepBpm bpm"
+                    )
+
+                    StatText(
+                        "fitness",
+                        FitnessBand
+                            .ofSleeping(
+                                sleepBpm
+                            )
+                            .label
+                    )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                val d1 = recovery?.hrr1
-                StatText("Recovery (HRR)", d1?.let { "${HeartRateRecovery.dropText(it)} at 1 min" } ?: "–")
-                if (d1 != null) StatText(HeartRateRecovery.band1min(d1), recovery?.hrr2?.let { "${HeartRateRecovery.dropText(it).removeSuffix(" bpm")} at 2 min" } ?: "")
+
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(24.dp)
+            ) {
+
+                val d1 =
+                    recovery?.hrr1
+
+                StatText(
+                    "Recovery (HRR)",
+                    d1?.let {
+                        "${HeartRateRecovery.dropText(it)} at 1 min"
+                    } ?: "–"
+                )
+
+                if (d1 != null) {
+
+                    StatText(
+                        HeartRateRecovery.band1min(
+                            d1
+                        ),
+                        recovery?.hrr2?.let {
+                            "${
+                                HeartRateRecovery
+                                    .dropText(it)
+                                    .removeSuffix(" bpm")
+                            } at 2 min"
+                        } ?: ""
+                    )
+                }
             }
+
             if (recovery != null) {
+
                 Text(
-                    "From ${Fmt.shortDate(recovery.start)}'s ${SportTypes.name(recovery.sportType)}: peak ${recovery.hrrPeak ?: recovery.maxHr ?: "?"} bpm",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "From ${Fmt.shortDate(recovery.start)}'s ${
+                        SportTypes.name(
+                            recovery.sportType
+                        )
+                    }: peak ${recovery.hrrPeak ?: recovery.maxHr ?: "?"} bpm",
+                    style =
+                        MaterialTheme.typography.bodySmall,
+                    color =
+                        MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onMeasureHr, enabled = connected && !measuring) {
-                    Text(if (measuring) "Measuring…" else "Measure HR")
+
+            /*
+             * Keep HR and BP separate so the buttons do not get cramped
+             * on narrower phones.
+             */
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+
+                OutlinedButton(
+                    onClick =
+                        onMeasureHr,
+                    enabled =
+                        connected &&
+                            !measuring &&
+                            !busy
+                ) {
+
+                    Text(
+                        if (measuring) {
+                            "Measuring…"
+                        } else {
+                            "Measure HR"
+                        }
+                    )
                 }
-                OutlinedButton(onClick = onSpo2, enabled = connected && !busy) { Text("SpO2 test") }
+
+                OutlinedButton(
+                    onClick =
+                        onBloodPressure,
+                    enabled =
+                        connected &&
+                            !measuring &&
+                            !busy
+                ) {
+                    Text(
+                        "Measure BP"
+                    )
+                }
             }
+
+            Row(
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+
+                OutlinedButton(
+                    onClick =
+                        onSpo2,
+                    enabled =
+                        connected &&
+                            !measuring &&
+                            !busy
+                ) {
+                    Text(
+                        "SpO2 test"
+                    )
+                }
+            }
+
             if (!connected) {
-                Text("Connect the watch to take live measurements.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                Text(
+                    "Connect the watch to take live measurements.",
+                    style =
+                        MaterialTheme.typography.bodySmall,
+                    color =
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -309,19 +956,56 @@ private fun VitalsCard(
  * the per-stage totals live on the History tab. Nothing is shown until a night has been synced.
  */
 @Composable
-private fun SleepCard(stages: List<SleepStage>) {
-    val chart = remember(stages) { SleepChartData.build(stages) } ?: return
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Sleep", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+private fun SleepCard(
+    stages: List<SleepStage>
+) {
+    val chart =
+        remember(stages) {
+            SleepChartData.build(stages)
+        } ?: return
+
+    ElevatedCard(
+        Modifier.fillMaxWidth()
+    ) {
+
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement =
+                Arrangement.spacedBy(8.dp)
+        ) {
+
+            Row(
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+
+                Text(
+                    "Sleep",
+                    style =
+                        MaterialTheme.typography.titleMedium,
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
                 Text(
                     "Bed ${Fmt.time(chart.start)} · Rise ${Fmt.time(chart.end)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style =
+                        MaterialTheme.typography.labelMedium,
+                    color =
+                        MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text("Last night: ${SleepChartData.hoursMinutes(chart.summary.totalMin)}", style = MaterialTheme.typography.bodyLarge)
+
+            Text(
+                "Last night: ${
+                    SleepChartData.hoursMinutes(
+                        chart.summary.totalMin
+                    )
+                }",
+                style =
+                    MaterialTheme.typography.bodyLarge
+            )
+
             SleepStrip(chart)
         }
     }
@@ -329,14 +1013,67 @@ private fun SleepCard(stages: List<SleepStage>) {
 
 /** One coloured block per stage across the night (same colours as the History hypnogram). */
 @Composable
-private fun SleepStrip(chart: SleepChart) {
-    val span = (chart.end - chart.start).toDouble().coerceAtLeast(1.0)
-    val colors = chartColors()
-    Canvas(Modifier.fillMaxWidth().height(20.dp)) {
+private fun SleepStrip(
+    chart: SleepChart
+) {
+    val span =
+        (
+            chart.end -
+                chart.start
+            )
+            .toDouble()
+            .coerceAtLeast(1.0)
+
+    val colors =
+        chartColors()
+
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(20.dp)
+    ) {
+
         for (b in chart.blocks) {
-            val x0 = ((b.start - chart.start) / span * size.width).toFloat().coerceIn(0f, size.width)
-            val x1 = ((b.end - chart.start) / span * size.width).toFloat().coerceIn(0f, size.width)
-            drawRect(sleepStageColor(b.stage, colors), Offset(x0, 0f), Size((x1 - x0).coerceAtLeast(1f), size.height))
+
+            val x0 =
+                (
+                    (b.start - chart.start) /
+                        span *
+                        size.width
+                    )
+                    .toFloat()
+                    .coerceIn(
+                        0f,
+                        size.width
+                    )
+
+            val x1 =
+                (
+                    (b.end - chart.start) /
+                        span *
+                        size.width
+                    )
+                    .toFloat()
+                    .coerceIn(
+                        0f,
+                        size.width
+                    )
+
+            drawRect(
+                sleepStageColor(
+                    b.stage,
+                    colors
+                ),
+                Offset(
+                    x0,
+                    0f
+                ),
+                Size(
+                    (x1 - x0)
+                        .coerceAtLeast(1f),
+                    size.height
+                )
+            )
         }
     }
 }
