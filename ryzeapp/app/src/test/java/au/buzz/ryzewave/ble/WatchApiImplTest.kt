@@ -628,7 +628,7 @@ class WatchApiImplTest {
             if (hex.startsWith("c5fd")) { acks += hex; link.rx("c5fd0450") }
             else if (hex.startsWith("c5")) { acks += hex; link.rx(hex.substring(0, 4)) }
         }
-        assertTrue(api.sendNotification(4, "Buzz's Ryze Wave: hello from the new app"))
+        assertTrue(api.sendNotification(4, "Dapper's SmartTrax: hello from the new app"))
         assertEquals(
             listOf(
                 "c500045000420075007a007a0027007300200052", "c5010079007a006500200057006100760065",
