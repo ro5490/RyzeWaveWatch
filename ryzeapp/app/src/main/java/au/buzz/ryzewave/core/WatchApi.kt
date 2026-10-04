@@ -4,6 +4,18 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
+ * One blood-pressure result reported by the watch.
+ *
+ * This represents the watch's legacy UTE/GloryFit BP estimate.
+ * It is not intended to imply clinical/medical accuracy.
+ */
+data class BloodPressureReading(
+    val systolic: Int,
+    val diastolic: Int,
+    val time: Long = System.currentTimeMillis(),
+)
+
+/**
  * Everything the app can ask the watch to do. Implemented by the BLE layer (`ble.WatchService` +
  * `ble.WatchGatt`) and exposed through `App.graph.watch`. All suspend functions run on the BLE
  * queue: one GATT operation at a time, replies matched by opcode as in ../../../../../docs/PROTOCOL.md.
@@ -32,6 +44,14 @@ interface WatchApi {
     /** Runs a spot SpO2 test (about 60 s). Returns the percentage, or null on failure/timeout. */
     suspend fun spo2SpotTest(): Int?
 
+    /**
+     * Runs the legacy UTE/GloryFit blood-pressure spot test.
+     *
+     * P32/RB112UDG uses C7 11 to start measurement and reports a completed
+     * result as C7 00 00 <systolic> <diastolic>.
+     */
+    suspend fun bloodPressureSpotTest(): BloodPressureReading?
+
     suspend fun startWorkout(sportType: Int = 1)
 
     /**
@@ -39,8 +59,15 @@ interface WatchApi {
      * thing to reading its display. Null when the watch does not answer. Default no-op for fakes.
      */
     suspend fun queryWorkout(): au.buzz.ryzewave.protocol.SportState? = null
+
     /** Push live metrics to the watch face once per second while a workout runs (`FD 44`). */
-    suspend fun updateWorkout(durationSeconds: Int, distanceMeters: Double, paceSecPerKm: Double, calories: Int)
+    suspend fun updateWorkout(
+        durationSeconds: Int,
+        distanceMeters: Double,
+        paceSecPerKm: Double,
+        calories: Int
+    )
+
     suspend fun pauseWorkout()
     suspend fun resumeWorkout()
     suspend fun stopWorkout()
@@ -59,24 +86,57 @@ interface WatchApi {
 }
 
 /** A workout control the *watch* originated (its physical buttons), to be applied to the app's controller. */
-enum class WorkoutControlAction { START, PAUSE, RESUME, STOP }
+enum class WorkoutControlAction {
+    START,
+    PAUSE,
+    RESUME,
+    STOP
+}
 
 sealed class WatchEvent {
-    data class Spo2Result(val time: Long, val percent: Int?) : WatchEvent()
-    data class HrSummary(val time: Long, val max: Int, val min: Int, val avg: Int) : WatchEvent()
-    data class RealtimeSteps(val stepsHour: StepsHour) : WatchEvent()
+    data class Spo2Result(
+        val time: Long,
+        val percent: Int?
+    ) : WatchEvent()
+
+    data class HrSummary(
+        val time: Long,
+        val max: Int,
+        val min: Int,
+        val avg: Int
+    ) : WatchEvent()
+
+    data class RealtimeSteps(
+        val stepsHour: StepsHour
+    ) : WatchEvent()
+
     /** `D1 0A 01` (the watch is looking for the phone: ring) / `D1 0A 00` (stop ringing). */
-    data class FindPhone(val start: Boolean) : WatchEvent()
+    data class FindPhone(
+        val start: Boolean
+    ) : WatchEvent()
+
     /**
      * A pause/resume/stop the user pressed on the *watch* (an unsolicited `FD 22`/`FD 33`/`FD 00`, not the echo
      * of a command the app just sent). The workout controller applies it exactly as it does the app's own
      * buttons, without sending the control back to the watch (which already changed state itself).
      */
-    data class WorkoutControl(val action: WorkoutControlAction) : WatchEvent()
+    data class WorkoutControl(
+        val action: WorkoutControlAction
+    ) : WatchEvent()
+
     /**
      * The 14-byte realtime workout push (`FD <type> <hr> …`): [steps] is the watch's per-session step count
      * (bytes 7-9, rising through the workout). The controller keeps the maximum as the workout's step total.
      */
-    data class WorkoutRealtime(val sportType: Int, val steps: Int, val calories: Int, val distanceMeters: Double) : WatchEvent()
-    data class Raw(val channel: String, val hex: String) : WatchEvent()
+    data class WorkoutRealtime(
+        val sportType: Int,
+        val steps: Int,
+        val calories: Int,
+        val distanceMeters: Double
+    ) : WatchEvent()
+
+    data class Raw(
+        val channel: String,
+        val hex: String
+    ) : WatchEvent()
 }
