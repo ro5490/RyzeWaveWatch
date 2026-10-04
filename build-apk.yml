@@ -1,0 +1,37 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build APK
+        working-directory: ryzeapp
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            -Dorg.gradle.java.home="$JAVA_HOME" \
+            --console=plain \
+            :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RyzeWaveWatch-debug
+          path: ryzeapp/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
