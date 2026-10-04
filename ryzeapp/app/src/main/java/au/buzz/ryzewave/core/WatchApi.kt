@@ -50,7 +50,8 @@ interface WatchApi {
      * P32/RB112UDG uses C7 11 to start measurement and reports a completed
      * result as C7 00 00 <systolic> <diastolic>.
      */
-    suspend fun bloodPressureSpotTest(): BloodPressureReading?
+
+    suspend fun bloodPressureSpotTest(): BloodPressureReading? = null
 
     suspend fun startWorkout(sportType: Int = 1)
 
