@@ -1,5 +1,6 @@
 package au.buzz.ryzewave.ble
 
+import au.buzz.ryzewave.core.BloodPressureReading
 import au.buzz.ryzewave.core.ConnectionState
 import au.buzz.ryzewave.core.HealthRepository
 import au.buzz.ryzewave.core.HrSample
@@ -54,6 +55,9 @@ import kotlin.math.min
  * P32 compatibility:
  * Firmware beginning RB112UDG uses the UTE protocol but does not respond to
  * the Ryze Wave SpO2 command family used by this application.
+ *
+ * The same P32 exposes its legacy UTE/GloryFit blood-pressure measurement
+ * through the C7 command family.
  */
 class WatchApiImpl(
     private val link: WatchLink,
@@ -613,10 +617,6 @@ class WatchApiImpl(
             //
             // P32 / RB112UDG:
             //     no response
-            //
-            // Therefore the P32 skips this stage entirely instead of
-            // waiting for the 30-second fetch timeout and marking the
-            // complete sync as failed.
             // ----------------------------------------------------------
 
             if (supportsRyzeSpo2()) {
@@ -680,11 +680,6 @@ class WatchApiImpl(
 
             } else {
 
-                /*
-                 * Deliberately NOT an error.
-                 *
-                 * This is the key P32 compatibility change.
-                 */
                 log(
                     "SpO2 history skipped: unsupported by ${_status.value.firmware}",
                     null
@@ -745,10 +740,6 @@ class WatchApiImpl(
                         null
                     }
 
-            /*
-             * With SpO2 skipped rather than failed on the P32,
-             * this can now succeed and update "Last sync".
-             */
             if (error == null) {
 
                 cursor(
@@ -1112,6 +1103,158 @@ class WatchApiImpl(
 
             return null
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Blood pressure spot test — P32 / legacy UTE / GloryFit
+    // ------------------------------------------------------------------
+
+    override suspend fun bloodPressureSpotTest(): BloodPressureReading? {
+
+        if (!link.isReady) {
+            return null
+        }
+
+        /*
+         * Protocol observed on this P32:
+         *
+         * Start:
+         *     C7 11
+         *
+         * Measuring/no result:
+         *     C7 00 FF 00 00
+         *
+         * Final:
+         *     C7 00 00 SS DD
+         *
+         * SS = systolic, DD = diastolic.
+         *
+         * Captured examples:
+         *
+         *     C7 00 00 74 4A
+         *              116 74
+         *
+         *     C7 00 00 75 4A
+         *              117 74
+         */
+
+        val startedAt =
+            clock()
+
+        try {
+
+            val final =
+                link.request(
+                    byteArrayOf(
+                        0xC7.toByte(),
+                        0x11.toByte(),
+                    ),
+                    { p ->
+                        isBloodPressureFinal(p)
+                    },
+                    BP_TIMEOUT_MS,
+                )
+
+            val systolic =
+                final[3].toInt() and 0xFF
+
+            val diastolic =
+                final[4].toInt() and 0xFF
+
+            log(
+                "BP spot test: $systolic/$diastolic mmHg " +
+                    "after ${(clock() - startedAt) / 1000} s",
+                null
+            )
+
+            return BloodPressureReading(
+                systolic = systolic,
+                diastolic = diastolic,
+                time = clock(),
+            )
+
+        } catch (e: GattException) {
+
+            log(
+                "BP spot test: ${e.message}",
+                null
+            )
+
+            return null
+
+        } finally {
+
+            /*
+             * Leave blood-pressure measurement mode after either a
+             * completed result or timeout.
+             *
+             * Failure to send the cleanup command must not discard a
+             * result that has already been received.
+             */
+            if (link.isReady) {
+
+                attempt(
+                    "bp stop"
+                ) {
+
+                    link.write(
+                        byteArrayOf(
+                            0xC7.toByte(),
+                            0x00.toByte(),
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Match a completed P32 C7 blood-pressure packet.
+     *
+     * C7 00 FF 00 00 is an in-progress/no-result packet and therefore
+     * intentionally does not satisfy this matcher.
+     */
+    private fun isBloodPressureFinal(
+        p: ByteArray
+    ): Boolean {
+
+        if (p.size < 5) {
+            return false
+        }
+
+        if (
+            (p[0].toInt() and 0xFF) !=
+            0xC7
+        ) {
+            return false
+        }
+
+        if (
+            (p[1].toInt() and 0xFF) !=
+            0x00
+        ) {
+            return false
+        }
+
+        if (
+            (p[2].toInt() and 0xFF) !=
+            0x00
+        ) {
+            return false
+        }
+
+        val systolic =
+            p[3].toInt() and 0xFF
+
+        val diastolic =
+            p[4].toInt() and 0xFF
+
+        /*
+         * These are protocol sanity checks, not medical ranges.
+         * We merely reject an empty result.
+         */
+        return systolic in 1..255 &&
+            diastolic in 1..255
     }
 
     // ------------------------------------------------------------------
@@ -2078,6 +2221,9 @@ class WatchApiImpl(
             3_000L
 
         const val SPO2_TIMEOUT_MS =
+            90_000L
+
+        const val BP_TIMEOUT_MS =
             90_000L
     }
 }
