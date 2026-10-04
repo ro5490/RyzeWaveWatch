@@ -305,7 +305,7 @@ private fun ConnectionCard(
                 ) {
 
                     Text(
-                        "Ryze Wave",
+                        "Dapper's P32 SmartTrax",
                         style =
                             MaterialTheme.typography.titleMedium
                     )
