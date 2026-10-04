@@ -10,19 +10,27 @@ import au.buzz.ryzewave.protocol.SportTypes
  * GPS distance — this helper never changes it). The step estimate is a *display aid* that only fills in when GPS is
  * not currently producing distance — location off / no accepted fix for a while (`gpsStale`), or no GPS at all
  * (distance still 0) — AND the watch has reported session steps. Then distance = steps x stride and pace is derived
- * from it, both clearly labelled "(from steps)" / "(est)" so they are never confused with a GPS measurement. When
- * neither GPS nor steps give a distance, pace stays "--:-- /km" (never a misleading estimate).
+ * from it, both clearly labelled "(from steps)" / "(est)" so they are never confused with a GPS measurement.
+ *
+ * Internally distance remains metres and pace remains seconds per kilometre. Display formatting converts these
+ * values to UK-style miles and minutes per mile.
  */
 data class WorkoutMetrics(
     /** Distance to show (metres): the GPS distance, or the step estimate when [estimated]. */
     val distanceMeters: Double,
+
     /** Label for the distance stat: [LABEL_GPS] or [LABEL_STEPS]. */
     val distanceLabel: String,
-    /** Formatted distance, e.g. "1.20 km" / "450 m" / "0 m". */
+
+    /** Formatted distance, e.g. "1.20 mi" / "450 m" / "0 m". */
     val distanceText: String,
+
+    /** Internal pace in seconds per kilometre. */
     val paceSecPerKm: Double,
-    /** Formatted pace, e.g. "5:12 /km", "6:10 /km (est)", or "--:-- /km". */
+
+    /** Formatted pace, e.g. "8:22 /mi", "9:55 /mi (est)", or "--:-- /mi". */
     val paceText: String,
+
     /** True when both figures come from the step estimate rather than GPS. */
     val estimated: Boolean,
 ) {
@@ -30,19 +38,26 @@ data class WorkoutMetrics(
         const val LABEL_GPS = "Distance (GPS)"
         const val LABEL_STEPS = "Distance (from steps)"
         const val EST_SUFFIX = " (est)"
-        const val NO_PACE = "--:-- /km"
+        const val NO_PACE = "--:-- /mi"
 
         /** Cadence (steps/min) at or above which the running stride is used when the sport does not decide it. */
         const val RUN_CADENCE_SPM = 140.0
 
         /** Sports whose distance is naturally a running stride. */
         private val RUN_SPORTS = setOf(
-            SportTypes.OUTDOOR_RUNNING, 0x15 /* Treadmill */, 0x1B /* Indoor Running */,
-            0x24 /* Trail Running */, 0x73 /* Marathon */,
+            SportTypes.OUTDOOR_RUNNING,
+            0x15, // Treadmill
+            0x1B, // Indoor Running
+            0x24, // Trail Running
+            0x73, // Marathon
         )
 
         /** Sports that are clearly walking. */
-        private val WALK_SPORTS = setOf(0x08 /* Hiking */, 0x09 /* Walking */, SportTypes.OUTDOOR_WALKING)
+        private val WALK_SPORTS = setOf(
+            0x08, // Hiking
+            0x09, // Walking
+            SportTypes.OUTDOOR_WALKING,
+        )
 
         fun of(state: WorkoutUiState): WorkoutMetrics = compute(
             gpsDistanceMeters = state.distanceMeters,
@@ -64,17 +79,26 @@ data class WorkoutMetrics(
             walkStrideMeters: Double,
             runStrideMeters: Double,
         ): Double {
-            val walk = walkStrideMeters.takeIf { it.isFinite() && it > 0.0 } ?: runStrideMeters
-            val run = runStrideMeters.takeIf { it.isFinite() && it > 0.0 } ?: walkStrideMeters
+            val walk =
+                walkStrideMeters.takeIf { it.isFinite() && it > 0.0 }
+                    ?: runStrideMeters
+
+            val run =
+                runStrideMeters.takeIf { it.isFinite() && it > 0.0 }
+                    ?: walkStrideMeters
+
             return when (sportType) {
                 in RUN_SPORTS -> run
                 in WALK_SPORTS -> walk
+
                 else -> {
-                    val cadenceSpm = if (steps != null && steps > 0 && elapsedSeconds > 0) {
-                        steps * 60.0 / elapsedSeconds
-                    } else {
-                        0.0
-                    }
+                    val cadenceSpm =
+                        if (steps != null && steps > 0 && elapsedSeconds > 0) {
+                            steps * 60.0 / elapsedSeconds
+                        } else {
+                            0.0
+                        }
+
                     if (cadenceSpm >= RUN_CADENCE_SPM) run else walk
                 }
             }
@@ -91,23 +115,57 @@ data class WorkoutMetrics(
             sportType: Int,
             elapsedSeconds: Int,
         ): WorkoutMetrics {
-            val gpsLive = gpsAvailable && !gpsStale && gpsDistanceMeters > 0.0
-            val stride = strideFor(sportType, steps, elapsedSeconds, walkStrideMeters, runStrideMeters)
-            val canEstimate = !gpsLive && steps != null && steps > 0 && stride.isFinite() && stride > 0.0
+            val gpsLive =
+                gpsAvailable &&
+                    !gpsStale &&
+                    gpsDistanceMeters > 0.0
+
+            val stride = strideFor(
+                sportType = sportType,
+                steps = steps,
+                elapsedSeconds = elapsedSeconds,
+                walkStrideMeters = walkStrideMeters,
+                runStrideMeters = runStrideMeters,
+            )
+
+            val canEstimate =
+                !gpsLive &&
+                    steps != null &&
+                    steps > 0 &&
+                    stride.isFinite() &&
+                    stride > 0.0
+
             if (canEstimate) {
                 val dist = steps!! * stride
-                val pace = if (dist > 0.0 && elapsedSeconds > 0) elapsedSeconds / dist * 1000.0 else 0.0
+
+                val pace =
+                    if (dist > 0.0 && elapsedSeconds > 0) {
+                        elapsedSeconds / dist * 1000.0
+                    } else {
+                        0.0
+                    }
+
                 val base = Fmt.pace(pace)
+
                 return WorkoutMetrics(
                     distanceMeters = dist,
                     distanceLabel = LABEL_STEPS,
                     distanceText = Fmt.metres(dist),
                     paceSecPerKm = pace,
-                    // Fmt.pace already renders an unknown / absurd pace as "--:-- /km"; only tag a real number "(est)".
-                    paceText = if (base.startsWith("--")) NO_PACE else base + EST_SUFFIX,
+
+                    // Fmt.pace renders unknown / absurd pace as "--:-- /mi".
+                    // Only a real pace receives the "(est)" suffix.
+                    paceText =
+                        if (base.startsWith("--")) {
+                            NO_PACE
+                        } else {
+                            base + EST_SUFFIX
+                        },
+
                     estimated = true,
                 )
             }
+
             return WorkoutMetrics(
                 distanceMeters = gpsDistanceMeters,
                 distanceLabel = LABEL_GPS,
