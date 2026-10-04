@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Dapper\'s SmartTrackx</string>
+    <string name="app_name">Dapper\'s SmartTrax</string>
     <string name="health_permission_rationale">SmartTrax writes your steps, heart rate, blood oxygen, distance, sleep and workouts from the designated watch into Health Connect.</string>
 </resources>
