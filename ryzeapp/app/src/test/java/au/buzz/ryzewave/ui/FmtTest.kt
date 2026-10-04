@@ -6,11 +6,12 @@ import org.junit.Test
 class FmtTest {
     @Test
     fun paceFormatsMinutesAndSeconds() {
-        assertEquals("5:12 /km", Fmt.pace(312.0))
-        assertEquals("--:-- /km", Fmt.pace(0.0))
-        assertEquals("--:-- /km", Fmt.pace(Double.NaN))
-        assertEquals("--:-- /km", Fmt.pace(4000.0))
-        assertEquals("5:12", Fmt.paceShort(312.0))
+        // 312 sec/km (5:12 /km) = ~502 sec/mi = 8:22 /mi.
+        assertEquals("8:22 /mi", Fmt.pace(312.0))
+        assertEquals("--:-- /mi", Fmt.pace(0.0))
+        assertEquals("--:-- /mi", Fmt.pace(Double.NaN))
+        assertEquals("--:-- /mi", Fmt.pace(4000.0))
+        assertEquals("8:22", Fmt.paceShort(312.0))
     }
 
     @Test
@@ -24,8 +25,13 @@ class FmtTest {
     @Test
     fun distanceAndCompactNumbers() {
         assertEquals("950 m", Fmt.metres(950.0))
-        assertEquals("1.50 km", Fmt.metres(1500.0))
-        assertEquals("6.1 km", Fmt.kmShort(6_120.0))
+
+        // UK-style presentation keeps sub-mile distances in metres.
+        assertEquals("1500 m", Fmt.metres(1500.0))
+
+        // 6120 m = 3.8028... miles.
+        assertEquals("3.8 mi", Fmt.kmShort(6_120.0))
+
         assertEquals("8k", Fmt.compact(8000.0))
         assertEquals("8.5k", Fmt.compact(8500.0))
         assertEquals("500", Fmt.compact(500.0))
