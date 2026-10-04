@@ -10,12 +10,12 @@ import kotlin.math.roundToInt
 
 /** UI-wide constants. */
 object UiDefaults {
-    const val WATCH_MAC = "78:02:B7:37:91:E5"
-    const val WATCH_NAME_PREFIX = "Ryze Wave"
+    const val WATCH_MAC = "78:02:B7:60:59:0F"
+    const val WATCH_NAME_PREFIX = "P32 SmartWatch"
     const val DEFAULT_SPORT_TYPE = 1
     val SPO2_INTERVALS = listOf(5, 10, 20, 30, 60)
     val HR_HIGH_ALARMS = listOf(140, 150, 160, 170, 180)   // watch buzzes when HR rises above the chosen value
-    val HR_LOW_ALARMS = listOf(40, 45, 50, 55)         // watch buzzes when HR falls below it (kept well under sleeping HR)
+    val HR_LOW_ALARMS = listOf(40, 45, 50, 55, 60, 65, 70) // watch buzzes when HR falls below it (kept well under sleeping HR)
     val HISTORY_RANGES = listOf(7, 30)
 }
 
@@ -40,6 +40,8 @@ object Fmt {
     private val weekdayFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE", Locale.getDefault())
     private val dateTimeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM HH:mm", Locale.getDefault())
 
+    private const val METERS_PER_MILE = 1609.344
+
     fun time(ms: Long): String = Instant.ofEpochMilli(ms).atZone(zone).format(timeFmt)
     fun date(ms: Long): String = Instant.ofEpochMilli(ms).atZone(zone).format(dateFmt)
     fun longDate(ms: Long): String = Instant.ofEpochMilli(ms).atZone(zone).format(longDateFmt)
@@ -63,23 +65,82 @@ object Fmt {
     fun value(v: Double): String =
         if (v == floor(v)) v.toInt().toString() else String.format(Locale.US, "%.1f", v)
 
-    fun km(meters: Double): String = String.format(Locale.US, "%.2f km", meters / 1000.0)
-    fun kmShort(meters: Double): String = String.format(Locale.US, "%.1f km", meters / 1000.0)
-    fun metres(meters: Double): String =
-        if (meters < 1000) "${meters.roundToInt()} m" else km(meters)
+    /**
+     * Distance in miles.
+     *
+     * The function name is retained as km() so existing call sites do not
+     * need to be changed. The underlying value is still supplied in metres.
+     *
+     * Example: 5000 metres -> "3.11 mi"
+     */
+    fun km(meters: Double): String =
+        String.format(Locale.US, "%.2f mi", meters / METERS_PER_MILE)
 
-    /** "5:12 /km", or "--:-- /km" when unknown / absurd. */
+    /**
+     * Short distance in miles.
+     *
+     * Example: 5000 metres -> "3.1 mi"
+     */
+    fun kmShort(meters: Double): String =
+        String.format(Locale.US, "%.1f mi", meters / METERS_PER_MILE)
+
+    /**
+     * Display short distances in metres and longer distances in miles.
+     *
+     * Examples:
+     * 850 metres  -> "850 m"
+     * 1200 metres -> "1200 m"
+     * 1609 metres -> "1.00 mi"
+     */
+    fun metres(meters: Double): String =
+        if (meters < METERS_PER_MILE) {
+            "${meters.roundToInt()} m"
+        } else {
+            km(meters)
+        }
+
+    /**
+     * Convert seconds per kilometre to seconds per mile for display.
+     *
+     * Example:
+     * 5:00 /km -> 8:03 /mi
+     */
     fun pace(secPerKm: Double): String {
-        if (secPerKm.isNaN() || secPerKm <= 0.0 || secPerKm > 3600.0) return "--:-- /km"
-        val s = secPerKm.roundToInt()
-        return String.format(Locale.US, "%d:%02d /km", s / 60, s % 60)
+        if (secPerKm.isNaN() || secPerKm <= 0.0 || secPerKm > 3600.0) {
+            return "--:-- /mi"
+        }
+
+        val secPerMile = secPerKm * 1.609344
+        val s = secPerMile.roundToInt()
+
+        return String.format(
+            Locale.US,
+            "%d:%02d /mi",
+            s / 60,
+            s % 60,
+        )
     }
 
-    /** "5:12" without the unit (chart axes). */
+    /**
+     * Imperial pace without the unit, for chart axes.
+     *
+     * Input remains seconds per kilometre. The displayed value is converted
+     * to the equivalent minutes/seconds per mile.
+     */
     fun paceShort(secPerKm: Double): String {
-        if (secPerKm.isNaN() || secPerKm <= 0.0 || secPerKm > 3600.0) return "--:--"
-        val s = secPerKm.roundToInt()
-        return String.format(Locale.US, "%d:%02d", s / 60, s % 60)
+        if (secPerKm.isNaN() || secPerKm <= 0.0 || secPerKm > 3600.0) {
+            return "--:--"
+        }
+
+        val secPerMile = secPerKm * 1.609344
+        val s = secPerMile.roundToInt()
+
+        return String.format(
+            Locale.US,
+            "%d:%02d",
+            s / 60,
+            s % 60,
+        )
     }
 
     /** "h:mm:ss" or "mm:ss". */
@@ -106,20 +167,35 @@ object Fmt {
         }
     }
 
-    fun minutes(min: Int): String = if (min >= 60) "${min / 60} h ${min % 60} min" else "$min min"
+    fun minutes(min: Int): String =
+        if (min >= 60) "${min / 60} h ${min % 60} min" else "$min min"
 
-    fun hourLabel(hour: Int): String = String.format(Locale.US, "%02d:00", hour)
+    fun hourLabel(hour: Int): String =
+        String.format(Locale.US, "%02d:00", hour)
 
     // ---- day arithmetic (local midnight)
+
     fun dayStart(ms: Long = System.currentTimeMillis()): Long =
-        Instant.ofEpochMilli(ms).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
+        Instant.ofEpochMilli(ms)
+            .atZone(zone)
+            .toLocalDate()
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli()
 
     fun plusDays(dayStart: Long, n: Long): Long =
-        Instant.ofEpochMilli(dayStart).atZone(zone).toLocalDate().plusDays(n).atStartOfDay(zone).toInstant().toEpochMilli()
+        Instant.ofEpochMilli(dayStart)
+            .atZone(zone)
+            .toLocalDate()
+            .plusDays(n)
+            .atStartOfDay(zone)
+            .toInstant()
+            .toEpochMilli()
 
     fun dayEnd(dayStart: Long): Long = plusDays(dayStart, 1)
 
-    fun localDate(ms: Long): LocalDate = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+    fun localDate(ms: Long): LocalDate =
+        Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
 
     fun isToday(dayStart: Long): Boolean = dayStart == dayStart()
 }
