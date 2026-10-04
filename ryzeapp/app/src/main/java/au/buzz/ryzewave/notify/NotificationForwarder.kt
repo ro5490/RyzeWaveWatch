@@ -87,6 +87,6 @@ class NotificationForwarder(
 
     companion object {
         const val QUEUE_CAPACITY = 8
-        const val TEST_TEXT = "Dapper's SmartTrax : test"
+        const val TEST_TEXT = "Dapper's SmartTrax: test"
     }
 }
