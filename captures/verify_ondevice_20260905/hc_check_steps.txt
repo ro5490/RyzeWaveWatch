@@ -6,7 +6,7 @@
   383,  932  [click] Button         Dismiss
   558,  932  [click] Button         Review
   360, 1072          TextView       Your health apps
-  314, 1172          TextView       Buzz's Ryze Wave
+  314, 1172          TextView       Dappers's SmartTrax
   194, 1290          TextView       Health
   339, 1347          TextView       Not connected
   615, 1316          ImageView      Click to connect this app to Health Connect
