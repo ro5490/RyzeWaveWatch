@@ -36,3 +36,9 @@ jobs:
           name: unit-test-results
           path: ryzeapp/app/build/test-results/testDebugUnitTest/*.xml
           if-no-files-found: ignore
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RyzeWaveWatch-debug
+          path: ryzeapp/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
