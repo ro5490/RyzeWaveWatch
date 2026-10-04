@@ -17,7 +17,7 @@ import kotlin.math.abs
  * into the Garmin TrackPointExtension (`gpxtpx:hr`) using the nearest sample within [HR_MATCH_WINDOW_MS].
  */
 object GpxWriter {
-    const val CREATOR = "Buzz's Ryze Wave"
+    const val CREATOR = "Dapper's SmartTrax"
     const val SEGMENT_GAP_MS = 60_000L
     const val HR_MATCH_WINDOW_MS = 5_000L
 
