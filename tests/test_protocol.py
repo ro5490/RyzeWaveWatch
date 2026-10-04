@@ -108,7 +108,7 @@ def test_sport_rt_carries_sport_type():
 
 def test_enc_notification_chunks_and_limits():
     from ryzewave.protocol import enc_notification
-    pk = enc_notification("Buzz's Ryze Wave: test")          # 22 chars = 44 bytes: 16+16+12
+    pk = enc_notification("Dapper's SmartTrax: test")          # 22 chars = 44 bytes: 16+16+12
     assert [p[:2].hex() for p in pk] == ["c500", "c501", "c502", "c5fd"]
     assert pk[0][2] == 4 and pk[0][3] == 44 and len(pk[0]) == 20 and len(pk[2]) == 14
     assert b"".join([pk[0][4:]] + [p[2:] for p in pk[1:-1]]).decode("utf-16-be") == "Buzz's Ryze Wave: test"
