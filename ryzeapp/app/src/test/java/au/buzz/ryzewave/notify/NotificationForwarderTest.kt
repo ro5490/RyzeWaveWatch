@@ -33,29 +33,26 @@ class NotificationForwarderTest {
         link = FakeWatchLink { now }
         settings = FakeSettings()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-        api =
-            WatchApiImpl(
-                link,
-                FakeRepo(),
-                settings,
-                scope,
-                autoSetupOnConnect = false,
-                clock = { now },
-            )
+        api = WatchApiImpl(
+            link,
+            FakeRepo(),
+            settings,
+            scope,
+            autoSetupOnConnect = false,
+            clock = { now },
+        )
+        forwarder = NotificationForwarder(
+            settings,
+            api,
+            scope,
+            "au.buzz.ryzewave",
+            { now },
+        ) { m, _ ->
+            logLines += m
+        }
 
-        forwarder =
-            NotificationForwarder(
-                settings,
-                api,
-                scope,
-                "au.buzz.ryzewave",
-                { now },
-            ) { m, _ ->
-                logLines += m
-            }
-
-        // The watch acks every chunk with `C5 <idx>`
-        // and the end with `C5 FD <type> <total>`.
+        // The watch acks every chunk with `C5 <idx>` and the end with
+        // `C5 FD <type> <total>`.
         link.responder = { hex, _ ->
             if (hex.startsWith("c5fd")) {
                 link.rx("c5fd0450")
@@ -74,14 +71,13 @@ class NotificationForwarderTest {
         pkg: String = "com.android.shell",
         key: String = "0|$pkg|1|tag1|2000",
         text: String = "Hello from adb",
-    ) =
-        PostedNotification(
-            pkg,
-            key,
-            "Test title",
-            text,
-            "Shell",
-        )
+    ) = PostedNotification(
+        pkg,
+        key,
+        "Test title",
+        text,
+        "Shell",
+    )
 
     @Test
     fun forwardsAnAllowedAppWhenEnabledAndConnected() = runBlocking {
@@ -89,44 +85,32 @@ class NotificationForwarderTest {
 
         assertTrue(
             eventually {
-                api.status.value.state ==
-                    ConnectionState.CONNECTED
-            }
+                api.status.value.state == ConnectionState.CONNECTED
+            },
         )
 
         settings.setNotificationsEnabled(true)
-        settings.setAllowedPackages(
-            setOf("com.android.shell")
-        )
+        settings.setAllowedPackages(setOf("com.android.shell"))
 
         assertTrue(
             eventually {
                 forwarder.enabled.value &&
                     forwarder.allowedPackages.value.isNotEmpty()
-            }
+            },
         )
 
-        assertTrue(
-            forwarder.offer(
-                post()
-            )
-        )
-
-        assertTrue(
-            eventually {
-                forwarder.sentCount == 1
-            }
-        )
+        assertTrue(forwarder.offer(post()))
+        assertTrue(eventually { forwarder.sentCount == 1 })
 
         val tx = link.txHex()
 
         // "Test title: Hello from adb"
-        // = 26 chars = 52 bytes
-        // = 4 chunks (16+16+16+4) + end + a buzz.
-        assertEquals(
-            6,
-            tx.size,
-        )
+        // = 26 chars
+        // = 52 UTF-16BE bytes
+        // = 4 chunks (16 + 16 + 16 + 4)
+        // + C5 FD
+        // + alert buzz.
+        assertEquals(6, tx.size)
 
         assertEquals(
             "c5000434" +
@@ -134,7 +118,6 @@ class NotificationForwarderTest {
             tx[0],
         )
 
-        // Notification end, then the alert buzz.
         assertEquals(
             "c5fd",
             tx[4],
@@ -147,34 +130,23 @@ class NotificationForwarderTest {
 
         // Last chunk carries the final "db".
         assertEquals(
-            "c503" +
-                "00640062",
+            "c503" + "00640062",
             tx[3],
         )
 
-        // Same key + text again within 10 s:
-        // dropped; a new text goes through.
-        assertFalse(
-            forwarder.offer(
-                post()
-            )
-        )
+        // Same key + text again within 10 s: dropped.
+        assertFalse(forwarder.offer(post()))
 
         now += 1_000
 
+        // A new text goes through.
         assertTrue(
             forwarder.offer(
-                post(
-                    text = "Second"
-                )
-            )
+                post(text = "Second"),
+            ),
         )
 
-        assertTrue(
-            eventually {
-                forwarder.sentCount == 2
-            }
-        )
+        assertTrue(eventually { forwarder.sentCount == 2 })
 
         // Exactly one drop: the duplicate.
         assertEquals(
@@ -186,16 +158,9 @@ class NotificationForwarderTest {
     @Test
     fun masterSwitchAllowListAndLinkStateGateTheSend() = runBlocking {
         // Disabled.
-        assertFalse(
-            forwarder.offer(
-                post()
-            )
-        )
-
+        assertFalse(forwarder.offer(post()))
         assertTrue(
-            logLines
-                .last()
-                .endsWith("notifications off")
+            logLines.last().endsWith("notifications off"),
         )
 
         settings.setNotificationsEnabled(true)
@@ -203,20 +168,13 @@ class NotificationForwarderTest {
         assertTrue(
             eventually {
                 forwarder.enabled.value
-            }
+            },
         )
 
         // Not in the allow-list.
-        assertFalse(
-            forwarder.offer(
-                post()
-            )
-        )
-
+        assertFalse(forwarder.offer(post()))
         assertTrue(
-            logLines
-                .last()
-                .endsWith("package not allowed")
+            logLines.last().endsWith("package not allowed"),
         )
 
         settings.setForwardAllNotifications(true)
@@ -224,49 +182,37 @@ class NotificationForwarderTest {
         assertTrue(
             eventually {
                 forwarder.forwardAll.value
-            }
+            },
         )
 
         // Watch not connected: dropped, not queued.
-        assertFalse(
-            forwarder.offer(
-                post()
-            )
+        assertFalse(forwarder.offer(post()))
+        assertTrue(
+            logLines.last().endsWith("watch not connected"),
         )
 
         assertTrue(
-            logLines
-                .last()
-                .endsWith("watch not connected")
+            link.txHex().isEmpty(),
         )
 
-        assertTrue(
-            link.txHex().isEmpty()
-        )
-
-        link.connect(
-            "78:02:B7:37:91:E5"
-        )
+        link.connect("78:02:B7:37:91:E5")
 
         assertTrue(
             eventually {
-                api.status.value.state ==
-                    ConnectionState.CONNECTED
-            }
+                api.status.value.state == ConnectionState.CONNECTED
+            },
         )
 
         assertTrue(
             forwarder.offer(
-                post(
-                    key = "new"
-                )
-            )
+                post(key = "new"),
+            ),
         )
 
         assertTrue(
             eventually {
                 forwarder.sentCount == 1
-            }
+            },
         )
 
         // Off, not allowed, not connected.
@@ -278,13 +224,9 @@ class NotificationForwarderTest {
 
     @Test
     fun testMessageBypassesTheSwitchAndIsTypeFour() = runBlocking {
-        link.connect(
-            "78:02:B7:37:91:E5"
-        )
+        link.connect("78:02:B7:37:91:E5")
 
-        assertTrue(
-            forwarder.sendTest()
-        )
+        assertTrue(forwarder.sendTest())
 
         val tx = link.txHex()
 
@@ -295,24 +237,27 @@ class NotificationForwarderTest {
          * = 48 UTF-16BE bytes
          * = 0x30 bytes.
          *
-         * Three 16-byte C5 data chunks,
-         * followed by C5 FD and the alert buzz.
+         * With 16 payload bytes per C5 packet:
+         *
+         *   C5 00 = first 16 bytes
+         *   C5 01 = next 16 bytes
+         *   C5 02 = final 16 bytes
+         *   C5 FD = end
+         *   AB... = alert buzz
          */
+
         assertEquals(
-            "c5000430" +
-                "004400610070007000650072002700730020",
+            "c500043000440061007000700065007200270073",
             tx[0],
         )
 
         assertEquals(
-            "c501" +
-                "0053006d00610072007400540072006100",
+            "c50100200053006d00610072007400540072",
             tx[1],
         )
 
         assertEquals(
-            "c502" +
-                "78003a00200074006500730074",
+            "c50200610078003a00200074006500730074",
             tx[2],
         )
 
@@ -334,10 +279,9 @@ class NotificationForwarderTest {
         link.disconnect()
 
         assertFalse(
-            forwarder.sendTest()
+            forwarder.sendTest(),
         )
 
-        // Disconnecting must not have added another write.
         assertEquals(
             5,
             link.txHex().size,
@@ -346,42 +290,36 @@ class NotificationForwarderTest {
 
     @Test
     fun missingAckIsReportedNotThrown() = runBlocking {
-        link.connect(
-            "78:02:B7:37:91:E5"
-        )
+        link.connect("78:02:B7:37:91:E5")
 
         // The watch never answers.
         link.responder = { _, _ -> }
 
-        val api2 =
-            WatchApiImpl(
-                link,
-                FakeRepo(),
-                settings,
-                scope,
-                autoSetupOnConnect = false,
-                clock = { now },
-            )
+        val api2 = WatchApiImpl(
+            link,
+            FakeRepo(),
+            settings,
+            scope,
+            autoSetupOnConnect = false,
+            clock = { now },
+        )
 
-        val f =
-            NotificationForwarder(
-                settings,
-                api2,
-                scope,
-                "au.buzz.ryzewave",
-                { now },
-            ) { m, _ ->
-                logLines += m
-            }
+        val f = NotificationForwarder(
+            settings,
+            api2,
+            scope,
+            "au.buzz.ryzewave",
+            { now },
+        ) { m, _ ->
+            logLines += m
+        }
 
         assertFalse(
-            f.sendTest()
+            f.sendTest(),
         )
 
         assertTrue(
-            f.lastError!!.contains(
-                "no reply"
-            )
+            f.lastError!!.contains("no reply"),
         )
 
         assertEquals(
