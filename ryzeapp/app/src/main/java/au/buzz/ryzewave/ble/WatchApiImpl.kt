@@ -15,6 +15,7 @@ import au.buzz.ryzewave.core.UserProfile
 import au.buzz.ryzewave.core.WatchApi
 import au.buzz.ryzewave.core.WatchEvent
 import au.buzz.ryzewave.core.WatchStatus
+import au.buzz.ryzewave.core.WatchFaceConfig
 import au.buzz.ryzewave.core.WorkoutControlAction
 import au.buzz.ryzewave.protocol.Packet
 import au.buzz.ryzewave.protocol.Protocol
@@ -1578,6 +1579,70 @@ class WatchApiImpl(
         )
 
         return true
+    }
+
+    // ------------------------------------------------------------------
+    // Watch-face capabilities — read-only 26 01 query
+    // ------------------------------------------------------------------
+
+    override suspend fun getWatchFaceConfig(): WatchFaceConfig? {
+
+        if (!link.isReady) {
+            return null
+        }
+
+        return try {
+
+            val reply =
+                link.request(
+                    Protocol.encWatchFaceConfigQuery(),
+                    { p ->
+                        p.size >= 18 &&
+                            Protocol.opcode(p) == Protocol.CMD_WATCH_FACE &&
+                            Protocol.sub(p) == 0x01
+                    },
+                    QUERY_TIMEOUT_MS
+                )
+
+            val config =
+                Protocol.decWatchFaceConfig(reply)
+
+            WatchFaceConfig(
+                dialNumber = config.dialNumber,
+                width = config.width,
+                height = config.height,
+                screenType = config.screenType,
+                maxDataSize = config.maxDataSize,
+                compatibleLevel = config.compatibleLevel,
+                cornerAngle = config.cornerAngle,
+            ).also {
+                log(
+                    "watch-face config: dial=${it.dialNumber} " +
+                        "${it.width}x${it.height} screenType=${it.screenType} " +
+                        "maxDataSize=${it.maxDataSize} compatibleLevel=${it.compatibleLevel} " +
+                        "cornerAngle=${it.cornerAngle}",
+                    null
+                )
+            }
+
+        } catch (e: GattException) {
+
+            log(
+                "watch-face config: ${e.message}",
+                null
+            )
+
+            null
+
+        } catch (e: RuntimeException) {
+
+            log(
+                "watch-face config decode failed: ${e.message}",
+                e
+            )
+
+            null
+        }
     }
 
     // ------------------------------------------------------------------
