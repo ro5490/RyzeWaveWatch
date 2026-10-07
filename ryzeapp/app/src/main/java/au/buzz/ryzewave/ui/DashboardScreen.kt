@@ -53,6 +53,7 @@ import au.buzz.ryzewave.core.HrSample
 import au.buzz.ryzewave.core.RestingHr
 import au.buzz.ryzewave.core.SleepStage
 import au.buzz.ryzewave.core.WatchStatus
+import au.buzz.ryzewave.core.WatchFaceConfig
 import au.buzz.ryzewave.core.Workout
 import au.buzz.ryzewave.protocol.SportTypes
 import au.buzz.ryzewave.workout.FitnessBand
@@ -76,6 +77,8 @@ fun DashboardScreen(
 
     // P32 legacy UTE/GloryFit blood-pressure result.
     val bloodPressure by vm.bloodPressure.collectAsStateWithLifecycle()
+
+    val watchFaceConfig by vm.watchFaceConfig.collectAsStateWithLifecycle()
 
     val message by vm.message.collectAsStateWithLifecycle()
 
@@ -181,6 +184,13 @@ fun DashboardScreen(
                 onMeasureHr = vm::measureHr,
                 onSpo2 = vm::spo2Test,
                 onBloodPressure = vm::bloodPressureTest,
+            )
+
+            WatchFaceCard(
+                config = watchFaceConfig,
+                connected = status.isConnected(),
+                busy = busy,
+                onRead = vm::readWatchFaceInfo,
             )
 
             SleepCard(sleep)
@@ -945,6 +955,90 @@ private fun VitalsCard(
                         MaterialTheme.typography.bodySmall,
                     color =
                         MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WatchFaceCard(
+    config: WatchFaceConfig?,
+    connected: Boolean,
+    busy: Boolean,
+    onRead: () -> Unit,
+) {
+    ElevatedCard(
+        Modifier.fillMaxWidth()
+    ) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "Watch face",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            if (config == null) {
+                Text(
+                    "Read the P32's watch-face capabilities. This sends only the read-only 26 01 query.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    StatText(
+                        "Resolution",
+                        "${config.width} × ${config.height}"
+                    )
+                    StatText(
+                        "Max data",
+                        "${config.maxDataSize} bytes"
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    StatText(
+                        "Dial",
+                        config.dialNumber.toString()
+                    )
+                    StatText(
+                        "Screen type",
+                        config.screenType.toString()
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    StatText(
+                        "Compatibility",
+                        config.compatibleLevel.toString()
+                    )
+                    StatText(
+                        "Corner angle",
+                        config.cornerAngle.toString()
+                    )
+                }
+            }
+
+            OutlinedButton(
+                onClick = onRead,
+                enabled = connected && !busy
+            ) {
+                Text("Read watch face info")
+            }
+
+            if (!connected) {
+                Text(
+                    "Connect the watch before reading watch-face information.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
