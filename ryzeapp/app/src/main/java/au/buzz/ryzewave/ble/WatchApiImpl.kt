@@ -1651,8 +1651,8 @@ class WatchApiImpl(
      *
      * The file is fully validated before `26 02` is sent. Data is written to 34F1 as
      * `27 <section> <payload>` packets. The P32 reports flow control on 33F2 with
-     * `26 03 xx`; GloryFit groups 16 data sections per flow-control acknowledgement.
-     * Each batch is sent with its waiter already registered.
+     * `26 03 xx`; GloryFit flow-controls at 4096-byte flash erase boundaries.
+     * Each boundary-crossing group is sent with its waiter already registered.
      */
     override suspend fun uploadWatchFace(
         data: ByteArray,
@@ -1700,13 +1700,51 @@ class WatchApiImpl(
 
         onProgress(WatchFaceUploadProgress(0, data.size.toLong()))
 
+        /*
+         * GloryFit does not wait after a fixed number of sections.  Its
+         * currErase/lastErase flow control is tied to 4096-byte flash erase
+         * regions.  Keep sending until the data stream crosses the next 4 KiB
+         * boundary; the packet that crosses it causes the watch to emit
+         * `26 03 04`.  Register the waiter before sending that group so the
+         * fast acknowledgement cannot race us.
+         *
+         * With the P32's MTU 247 this is 241 BIN bytes per section, therefore
+         * the first acknowledgement is after section 16 (17 packets / 4097
+         * BIN bytes), not after 16 packets.  Waiting after exactly 16 packets
+         * leaves the watch at 3856 bytes and produces no acknowledgement.
+         */
         while (sent < data.size) {
-            val batchEndSection =
-                min(section + WATCH_FACE_SECTIONS_PER_FLOW_ACK, sectionCount)
+            val eraseBlock = sent / WATCH_FACE_ERASE_BLOCK_BYTES
+            val nextBoundary =
+                (eraseBlock + 1L) * WATCH_FACE_ERASE_BLOCK_BYTES.toLong()
+
+            // If the remainder never reaches another erase boundary, there is
+            // no 26 03 04 to wait for.  Stream the tail and then send finish.
+            if (data.size.toLong() <= nextBoundary) {
+                while (sent < data.size) {
+                    val end = min(sent + payloadBytes, data.size)
+                    val payload = data.copyOfRange(sent, end)
+                    link.write(
+                        Protocol.encWatchFaceDataSection(section, payload),
+                        WatchChannel.DATA,
+                    )
+                    sent = end
+                    section += 1
+                    onProgress(
+                        WatchFaceUploadProgress(
+                            bytesSent = sent.toLong(),
+                            totalBytes = data.size.toLong(),
+                        )
+                    )
+                }
+                break
+            }
 
             val status = link.waitForDuring(
                 action = {
-                    while (sent < data.size && section < batchEndSection) {
+                    // Send through the first section whose payload takes the
+                    // stream into the next 4096-byte erase region.
+                    while (sent < data.size && sent.toLong() <= nextBoundary) {
                         val end = min(sent + payloadBytes, data.size)
                         val payload = data.copyOfRange(sent, end)
                         link.write(
@@ -2421,8 +2459,8 @@ class WatchApiImpl(
         const val WATCH_FACE_FINISH_TIMEOUT_MS =
             15_000L
 
-        const val WATCH_FACE_SECTIONS_PER_FLOW_ACK =
-            16
+        const val WATCH_FACE_ERASE_BLOCK_BYTES =
+            4_096
 
         const val WATCH_FACE_MAX_RESUME_RETRIES =
             3
