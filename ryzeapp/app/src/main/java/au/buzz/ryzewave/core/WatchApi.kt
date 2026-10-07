@@ -16,6 +16,20 @@ data class BloodPressureReading(
 )
 
 /**
+ * Watch-face capabilities reported by the classic GloryFit/UTE `26 01`
+ * configuration query.
+ */
+data class WatchFaceConfig(
+    val dialNumber: Long,
+    val width: Int,
+    val height: Int,
+    val screenType: Int,
+    val maxDataSize: Long,
+    val compatibleLevel: Int,
+    val cornerAngle: Int,
+)
+
+/**
  * Everything the app can ask the watch to do. Implemented by the BLE layer (`ble.WatchService` +
  * `ble.WatchGatt`) and exposed through `App.graph.watch`. All suspend functions run on the BLE
  * queue: one GATT operation at a time, replies matched by opcode as in ../../../../../docs/PROTOCOL.md.
@@ -52,6 +66,12 @@ interface WatchApi {
      */
 
     suspend fun bloodPressureSpotTest(): BloodPressureReading? = null
+
+    /**
+     * Reads the watch-face configuration using the classic GloryFit/UTE
+     * `26 01` query. This is read-only and does not prepare or upload a dial.
+     */
+    suspend fun getWatchFaceConfig(): WatchFaceConfig? = null
 
     suspend fun startWorkout(sportType: Int = 1)
 
