@@ -1597,7 +1597,7 @@ class WatchApiImpl(
                 link.request(
                     Protocol.encWatchFaceConfigQuery(),
                     { p ->
-                        p.size >= 18 &&
+                        p.size >= 15 &&
                             Protocol.opcode(p) == Protocol.CMD_WATCH_FACE &&
                             Protocol.sub(p) == 0x01
                     },
