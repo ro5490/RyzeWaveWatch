@@ -266,6 +266,23 @@ interface WatchLink {
         channel: WatchChannel = WatchChannel.CMD,
     ): ByteArray
 
+    /**
+     * Registers a reply waiter first, then runs [action], then returns the first matching packet.
+     *
+     * [BaseWatchLink] overrides this atomically so fast watch-face flow-control notifications cannot
+     * arrive in the gap between a DATA write burst and a subsequent `waitFor`.
+     * The default keeps third-party/test implementations source-compatible.
+     */
+    suspend fun waitForDuring(
+        action: suspend () -> Unit,
+        pred: (ByteArray) -> Boolean,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+        channel: WatchChannel = WatchChannel.CMD,
+    ): ByteArray {
+        action()
+        return waitFor(pred, timeoutMs, channel)
+    }
+
     /** Writes [cmd] and returns the first packet on [replyChannel] whose opcode is [opcode]. */
     suspend fun request(
         cmd: ByteArray,
@@ -384,6 +401,36 @@ abstract class BaseWatchLink : WatchLink {
         waiters += w
 
         try {
+            return withTimeoutOrNull(timeoutMs) {
+                d.await()
+            } ?: throw GattException(
+                "no matching packet on ${channel.notifyName} within $timeoutMs ms",
+                timeout = true,
+            )
+        } finally {
+            waiters -= w
+        }
+    }
+
+    override suspend fun waitForDuring(
+        action: suspend () -> Unit,
+        pred: (ByteArray) -> Boolean,
+        timeoutMs: Long,
+        channel: WatchChannel,
+    ): ByteArray {
+        val d = CompletableDeferred<ByteArray>()
+
+        val w = Waiter(
+            channel,
+            { p -> !d.isCompleted && pred(p) && d.complete(p) },
+            { e -> d.completeExceptionally(e) },
+        )
+
+        waiters += w
+
+        try {
+            action()
+
             return withTimeoutOrNull(timeoutMs) {
                 d.await()
             } ?: throw GattException(
