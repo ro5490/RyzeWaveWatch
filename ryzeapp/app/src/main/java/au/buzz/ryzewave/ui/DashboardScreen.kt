@@ -54,6 +54,7 @@ import au.buzz.ryzewave.core.RestingHr
 import au.buzz.ryzewave.core.SleepStage
 import au.buzz.ryzewave.core.WatchStatus
 import au.buzz.ryzewave.core.WatchFaceConfig
+import au.buzz.ryzewave.core.WatchFaceUploadProgress
 import au.buzz.ryzewave.core.Workout
 import au.buzz.ryzewave.protocol.SportTypes
 import au.buzz.ryzewave.workout.FitnessBand
@@ -79,6 +80,7 @@ fun DashboardScreen(
     val bloodPressure by vm.bloodPressure.collectAsStateWithLifecycle()
 
     val watchFaceConfig by vm.watchFaceConfig.collectAsStateWithLifecycle()
+    val watchFaceUpload by vm.watchFaceUpload.collectAsStateWithLifecycle()
 
     val message by vm.message.collectAsStateWithLifecycle()
 
@@ -119,6 +121,15 @@ fun DashboardScreen(
         ) { _ ->
             if (vm.hasBluetoothPermission()) {
                 vm.connect()
+            }
+        }
+
+    val watchFacePicker =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                vm.installWatchFace(uri)
             }
         }
 
@@ -188,9 +199,19 @@ fun DashboardScreen(
 
             WatchFaceCard(
                 config = watchFaceConfig,
+                upload = watchFaceUpload,
                 connected = status.isConnected(),
                 busy = busy,
                 onRead = vm::readWatchFaceInfo,
+                onInstall = {
+                    watchFacePicker.launch(
+                        arrayOf(
+                            "application/octet-stream",
+                            "application/x-binary",
+                            "*/*",
+                        )
+                    )
+                },
             )
 
             SleepCard(sleep)
@@ -964,9 +985,11 @@ private fun VitalsCard(
 @Composable
 private fun WatchFaceCard(
     config: WatchFaceConfig?,
+    upload: WatchFaceUploadProgress?,
     connected: Boolean,
     busy: Boolean,
     onRead: () -> Unit,
+    onInstall: () -> Unit,
 ) {
     ElevatedCard(
         Modifier.fillMaxWidth()
@@ -982,7 +1005,7 @@ private fun WatchFaceCard(
 
             if (config == null) {
                 Text(
-                    "Read the P32's watch-face capabilities. This sends only the read-only 26 01 query.",
+                    "Read the P32's watch-face capabilities before installing a GloryFit .BIN face.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1027,16 +1050,44 @@ private fun WatchFaceCard(
                 }
             }
 
-            OutlinedButton(
-                onClick = onRead,
-                enabled = connected && !busy
-            ) {
-                Text("Read watch face info")
+            if (upload != null && upload.totalBytes > 0) {
+                val pct =
+                    ((upload.bytesSent * 100L) / upload.totalBytes)
+                        .coerceIn(0L, 100L)
+
+                Text(
+                    "Installing… $pct% (${upload.bytesSent}/${upload.totalBytes} bytes)",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onRead,
+                    enabled = connected && !busy
+                ) {
+                    Text("Read info")
+                }
+
+                Button(
+                    onClick = onInstall,
+                    enabled = connected && config != null && !busy
+                ) {
+                    Text("Install .BIN")
+                }
+            }
+
+            Text(
+                "Only GloryFit-compatible .BIN files are accepted. The app checks the .BIN header, payload length, CRC-32 and watch size limit before preparing the watch.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             if (!connected) {
                 Text(
-                    "Connect the watch before reading watch-face information.",
+                    "Connect the watch before reading or installing a watch face.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
