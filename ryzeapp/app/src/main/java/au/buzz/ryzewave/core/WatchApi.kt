@@ -25,8 +25,8 @@ data class WatchFaceConfig(
     val height: Int,
     val screenType: Int,
     val maxDataSize: Long,
-    val compatibleLevel: Int,
-    val cornerAngle: Int,
+    val compatibleLevel: Int?,
+    val cornerAngle: Int?,
 )
 
 /**
