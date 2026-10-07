@@ -1018,11 +1018,11 @@ private fun WatchFaceCard(
                 ) {
                     StatText(
                         "Compatibility",
-                        config.compatibleLevel.toString()
+                        config.compatibleLevel?.toString() ?: "—"
                     )
                     StatText(
                         "Corner angle",
-                        config.cornerAngle.toString()
+                        config.cornerAngle?.toString() ?: "—"
                     )
                 }
             }
