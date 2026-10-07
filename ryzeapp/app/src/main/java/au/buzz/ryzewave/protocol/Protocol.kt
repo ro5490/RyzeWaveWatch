@@ -5,6 +5,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.Locale
 import java.util.UUID
+import java.util.zip.CRC32
 import kotlin.math.min
 import kotlin.math.round
 
@@ -45,6 +46,11 @@ data class WatchFaceConfigPacket(
     val maxDataSize: Long,
     val compatibleLevel: Int?,
     val cornerAngle: Int?,
+)
+
+data class WatchFaceBinInfo(
+    val payloadSize: Int,
+    val crc32: Long,
 )
 
 object Protocol {
@@ -117,6 +123,7 @@ object Protocol {
     const val CMD_WATCH_FACE = 0x26
     /** Classic GloryFit/UTE watch-face binary section opcode. */
     const val CMD_WATCH_FACE_DATA = 0x27
+    const val WATCH_FACE_HEADER_BYTES = 24
 
     const val FETCH_START = 0xFA
     const val FETCH_DATA = 0x07
@@ -194,6 +201,77 @@ object Protocol {
 
     /** `26 01`: query classic GloryFit/UTE watch-face capabilities. Read-only. */
     fun encWatchFaceConfigQuery(): ByteArray = bytesOf(CMD_WATCH_FACE, 0x01)
+
+    /** `26 02`: prepare the classic online-dial destination for an upload. */
+    fun encWatchFacePrepare(): ByteArray = bytesOf(CMD_WATCH_FACE, 0x02)
+
+    /** `26 03 00`: tell the watch that all `27` sections have been sent. */
+    fun encWatchFaceFinish(): ByteArray = bytesOf(CMD_WATCH_FACE, 0x03, 0x00)
+
+    /**
+     * One classic online-dial data section: `27 <index-hi> <index-lo> <payload>`.
+     * The section index is unsigned 16-bit big-endian.
+     */
+    fun encWatchFaceDataSection(index: Int, payload: ByteArray): ByteArray {
+        require(index in 0..0xFFFF) { "watch-face section index out of range: $index" }
+        require(payload.isNotEmpty()) { "watch-face section payload is empty" }
+
+        return ByteArray(3 + payload.size).also { out ->
+            out[0] = CMD_WATCH_FACE_DATA.toByte()
+            out[1] = (index ushr 8).toByte()
+            out[2] = index.toByte()
+            payload.copyInto(out, destinationOffset = 3)
+        }
+    }
+
+    /**
+     * Validates the GloryFit `.BIN` container used by the P32 before any destructive
+     * `26 02` prepare command is allowed.
+     *
+     * Confirmed container fields:
+     *  - bytes 0..3: ASCII ".BIN"
+     *  - bytes 4..7: payload length, little-endian u32
+     *  - bytes 8..11: CRC-32 of bytes 24..end, little-endian u32
+     *  - bytes 24..end: dial payload
+     */
+    fun validateWatchFaceBin(data: ByteArray): WatchFaceBinInfo {
+        require(data.size >= WATCH_FACE_HEADER_BYTES) {
+            "watch-face BIN is too short: ${data.size} bytes"
+        }
+        require(
+            data[0] == '.'.code.toByte() &&
+                data[1] == 'B'.code.toByte() &&
+                data[2] == 'I'.code.toByte() &&
+                data[3] == 'N'.code.toByte()
+        ) {
+            "watch-face file does not start with .BIN"
+        }
+
+        fun u32le(offset: Int): Long =
+            data[offset].toLong().and(0xFF) or
+                (data[offset + 1].toLong().and(0xFF) shl 8) or
+                (data[offset + 2].toLong().and(0xFF) shl 16) or
+                (data[offset + 3].toLong().and(0xFF) shl 24)
+
+        val payloadSize = u32le(4)
+        val actualPayloadSize = data.size - WATCH_FACE_HEADER_BYTES
+        require(payloadSize == actualPayloadSize.toLong()) {
+            "watch-face BIN length mismatch: header=$payloadSize actual=$actualPayloadSize"
+        }
+
+        val expectedCrc = u32le(8)
+        val crc = CRC32()
+        crc.update(data, WATCH_FACE_HEADER_BYTES, actualPayloadSize)
+        val actualCrc = crc.value
+        require(expectedCrc == actualCrc) {
+            "watch-face BIN CRC mismatch: header=${expectedCrc.toString(16)} actual=${actualCrc.toString(16)}"
+        }
+
+        return WatchFaceBinInfo(
+            payloadSize = actualPayloadSize,
+            crc32 = actualCrc,
+        )
+    }
 
     /** `A3 yyyy MM dd HH mm ss` — echoed back by the watch as the ack. */
     fun encSetTime(t: LocalDateTime = LocalDateTime.now()): ByteArray =
