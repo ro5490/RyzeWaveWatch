@@ -4,6 +4,7 @@ package au.buzz.ryzewave.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -24,6 +25,7 @@ import au.buzz.ryzewave.core.TrackPoint
 import au.buzz.ryzewave.core.UserProfile
 import au.buzz.ryzewave.core.WatchStatus
 import au.buzz.ryzewave.core.WatchFaceConfig
+import au.buzz.ryzewave.core.WatchFaceUploadProgress
 import au.buzz.ryzewave.core.Workout
 import au.buzz.ryzewave.ble.WatchService
 import androidx.health.connect.client.records.ExerciseSessionRecord
@@ -141,6 +143,9 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
     /** Most recent read-only `26 01` watch-face capability response. */
     private val _watchFaceConfig = MutableStateFlow<WatchFaceConfig?>(null)
     val watchFaceConfig: StateFlow<WatchFaceConfig?> = _watchFaceConfig.asStateFlow()
+
+    private val _watchFaceUpload = MutableStateFlow<WatchFaceUploadProgress?>(null)
+    val watchFaceUpload: StateFlow<WatchFaceUploadProgress?> = _watchFaceUpload.asStateFlow()
 
     init {
         // "Today" follows the wall clock, so a screen left open rolls over at midnight (DayClock ticks every minute).
@@ -261,6 +266,33 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
         } else {
             _watchFaceConfig.value = config
             "Watch face: ${config.width}x${config.height}, max ${config.maxDataSize} bytes"
+        }
+    }
+
+    /**
+     * Reads a selected `.bin` through Android's Storage Access Framework and installs it.
+     * WatchApi validates the container/CRC before it sends the destructive `26 02` prepare.
+     */
+    fun installWatchFace(uri: Uri) = task("Install watch face") {
+        val data = withContext(Dispatchers.IO) {
+            App.instance.contentResolver.openInputStream(uri)?.use { input ->
+                input.readBytes()
+            }
+        } ?: return@task "Could not read selected watch-face file"
+
+        _watchFaceUpload.value = WatchFaceUploadProgress(0, data.size.toLong())
+
+        try {
+            val ok = graph.watch.uploadWatchFace(data) { progress ->
+                _watchFaceUpload.value = progress
+            }
+            if (ok) {
+                "Watch face installed"
+            } else {
+                "Watch face install failed"
+            }
+        } finally {
+            _watchFaceUpload.value = null
         }
     }
 
