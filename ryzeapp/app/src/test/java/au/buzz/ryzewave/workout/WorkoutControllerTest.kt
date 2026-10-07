@@ -330,7 +330,9 @@ class WorkoutControllerTest {
         )) {
             val want = if (a == WorkoutControlAction.PAUSE) WorkoutPhase.PAUSED else WorkoutPhase.RUNNING
             watch.emitEvent(WatchEvent.WorkoutControl(a))
-            awaitUntil("$a applies at once") { ctl.state.value.state == want }
+            awaitUntil("$a applies at once") {
+                ctl.state.value.state == want && phases.lastOrNull() == want
+            }
         }
 
         assertEquals(
