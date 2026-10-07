@@ -23,6 +23,7 @@ import au.buzz.ryzewave.core.StrideSettings
 import au.buzz.ryzewave.core.TrackPoint
 import au.buzz.ryzewave.core.UserProfile
 import au.buzz.ryzewave.core.WatchStatus
+import au.buzz.ryzewave.core.WatchFaceConfig
 import au.buzz.ryzewave.core.Workout
 import au.buzz.ryzewave.ble.WatchService
 import androidx.health.connect.client.records.ExerciseSessionRecord
@@ -137,6 +138,10 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
     private val _bloodPressure = MutableStateFlow<BloodPressureReading?>(null)
     val bloodPressure: StateFlow<BloodPressureReading?> = _bloodPressure.asStateFlow()
 
+    /** Most recent read-only `26 01` watch-face capability response. */
+    private val _watchFaceConfig = MutableStateFlow<WatchFaceConfig?>(null)
+    val watchFaceConfig: StateFlow<WatchFaceConfig?> = _watchFaceConfig.asStateFlow()
+
     init {
         // "Today" follows the wall clock, so a screen left open rolls over at midnight (DayClock ticks every minute).
         viewModelScope.launch {
@@ -239,6 +244,23 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
         } else {
             _bloodPressure.value = result
             "Blood pressure ${result.systolic}/${result.diastolic} mmHg"
+        }
+    }
+
+
+    /**
+     * Read the classic GloryFit/UTE watch-face capabilities.
+     *
+     * This invokes only `26 01`; it does not prepare, erase or upload a face.
+     */
+    fun readWatchFaceInfo() = task("Watch face info") {
+        val config = graph.watch.getWatchFaceConfig()
+
+        if (config == null) {
+            "Watch did not return watch-face information"
+        } else {
+            _watchFaceConfig.value = config
+            "Watch face: ${config.width}x${config.height}, max ${config.maxDataSize} bytes"
         }
     }
 
