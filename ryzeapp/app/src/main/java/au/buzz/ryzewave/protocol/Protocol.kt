@@ -14,6 +14,13 @@ internal fun ByteArray.u8(i: Int): Int = this[i].toInt() and 0xFF
 /** Big-endian unsigned 16-bit value at [i]. */
 internal fun ByteArray.u16(i: Int): Int = (u8(i) shl 8) or u8(i + 1)
 
+/** Big-endian unsigned 32-bit value at [i], represented as a Long. */
+internal fun ByteArray.u32(i: Int): Long =
+    (u8(i).toLong() shl 24) or
+        (u8(i + 1).toLong() shl 16) or
+        (u8(i + 2).toLong() shl 8) or
+        u8(i + 3).toLong()
+
 /** Builds a ByteArray from int literals; every value is masked to 8 bits. */
 internal fun bytesOf(vararg v: Int): ByteArray = ByteArray(v.size) { (v[it] and 0xFF).toByte() }
 
@@ -30,6 +37,16 @@ internal fun bytesOf(vararg v: Int): ByteArray = ByteArray(v.size) { (v[it] and 
  * (0x07E9 = 2025, 0x07EA = 2026). All decoded times are wall-clock [LocalDateTime]s in the watch's
  * (= phone's) local time; convert with `toEpochMillis()` from Packets.kt.
  */
+data class WatchFaceConfigPacket(
+    val dialNumber: Long,
+    val width: Int,
+    val height: Int,
+    val screenType: Int,
+    val maxDataSize: Long,
+    val compatibleLevel: Int,
+    val cornerAngle: Int,
+)
+
 object Protocol {
 
     // ------------------------------------------------------------------ GATT
@@ -96,6 +113,10 @@ object Protocol {
     const val CMD_BT3 = 0x38
     const val CMD_TIME_FORMAT = 0xA0
     const val CMD_MOOD = 0x44
+    /** Classic GloryFit/UTE watch-face control/query opcode. */
+    const val CMD_WATCH_FACE = 0x26
+    /** Classic GloryFit/UTE watch-face binary section opcode. */
+    const val CMD_WATCH_FACE_DATA = 0x27
 
     const val FETCH_START = 0xFA
     const val FETCH_DATA = 0x07
@@ -170,6 +191,9 @@ object Protocol {
     fun encVersion(): ByteArray = bytesOf(CMD_VERSION)
     fun encDspVersion(): ByteArray = bytesOf(CMD_VERSION, 0x01)
     fun encBattery(): ByteArray = bytesOf(CMD_BATTERY)
+
+    /** `26 01`: query classic GloryFit/UTE watch-face capabilities. Read-only. */
+    fun encWatchFaceConfigQuery(): ByteArray = bytesOf(CMD_WATCH_FACE, 0x01)
 
     /** `A3 yyyy MM dd HH mm ss` — echoed back by the watch as the ack. */
     fun encSetTime(t: LocalDateTime = LocalDateTime.now()): ByteArray =
@@ -371,6 +395,40 @@ object Protocol {
     fun decBattery(b: ByteArray): BatteryInfo {
         require(b.size >= 2) { "short battery packet: ${hex(b)}" }
         return BatteryInfo(b.u8(1), b.size > 2 && b.u8(2) == 0x01)
+    }
+
+    /**
+     * Decodes the classic GloryFit/UTE `26 01` watch-face capability response.
+     *
+     * Layout:
+     *  0      26
+     *  1      01
+     *  2..5   dial number, u32 BE
+     *  6..7   width, u16 BE
+     *  8..9   height, u16 BE
+     *  10     screen type
+     *  11..14 maximum dial data size, u32 BE
+     *  15     compatible level
+     *  16     reserved/unknown
+     *  17     corner angle
+     */
+    fun decWatchFaceConfig(b: ByteArray): WatchFaceConfigPacket {
+        require(b.size >= 18) {
+            "watch-face config must be at least 18 bytes, got ${b.size}: ${hex(b)}"
+        }
+        require(b.u8(0) == CMD_WATCH_FACE && b.u8(1) == 0x01) {
+            "not a 26 01 watch-face config packet: ${hex(b)}"
+        }
+
+        return WatchFaceConfigPacket(
+            dialNumber = b.u32(2),
+            width = b.u16(6),
+            height = b.u16(8),
+            screenType = b.u8(10),
+            maxDataSize = b.u32(11),
+            compatibleLevel = b.u8(15),
+            cornerAngle = b.u8(17),
+        )
     }
 
     /**
