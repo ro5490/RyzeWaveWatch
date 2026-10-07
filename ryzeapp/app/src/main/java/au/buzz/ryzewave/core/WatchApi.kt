@@ -29,6 +29,12 @@ data class WatchFaceConfig(
     val cornerAngle: Int?,
 )
 
+
+data class WatchFaceUploadProgress(
+    val bytesSent: Long,
+    val totalBytes: Long,
+)
+
 /**
  * Everything the app can ask the watch to do. Implemented by the BLE layer (`ble.WatchService` +
  * `ble.WatchGatt`) and exposed through `App.graph.watch`. All suspend functions run on the BLE
@@ -72,6 +78,17 @@ interface WatchApi {
      * `26 01` query. This is read-only and does not prepare or upload a dial.
      */
     suspend fun getWatchFaceConfig(): WatchFaceConfig? = null
+
+    /**
+     * Installs a validated classic GloryFit `.BIN` watch face.
+     *
+     * Implementations must reject malformed containers before sending `26 02`.
+     * Returns true only after the watch reports `26 03 00`.
+     */
+    suspend fun uploadWatchFace(
+        data: ByteArray,
+        onProgress: (WatchFaceUploadProgress) -> Unit = {},
+    ): Boolean = false
 
     suspend fun startWorkout(sportType: Int = 1)
 
