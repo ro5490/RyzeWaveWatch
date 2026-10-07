@@ -52,7 +52,9 @@ class RawPacket(val channel: WatchChannel, val data: ByteArray, val time: Long, 
 sealed class LinkState {
     /** [status] is the GATT status of the last disconnect (0 = clean / never connected). */
     data class Disconnected(val status: Int, val message: String? = null) : LinkState()
+
     data class Connecting(val mac: String, val attempt: Int) : LinkState()
+
     /**
      * Link is up, notifications enabled, feature bitmap read. [generation] increases on every successful
      * connect so collectors of a StateFlow never miss a reconnect; [reconnected] is true when the link was
@@ -76,6 +78,7 @@ class GattException(
 object Backoff {
     const val BASE_MS = 2_000L
     const val MAX_MS = 60_000L
+
     fun delayMs(attempt: Int): Long {
         val n = (attempt - 1).coerceIn(0, 16)
         val v = BASE_MS shl n
@@ -97,10 +100,12 @@ object Matchers {
     fun isFetchEnd(p: ByteArray): Boolean = p.size == 3 && p.u8(1) == FETCH_END
 
     /** `34 FA FD nn` — end of the SpO2 fetch. */
-    fun isSpo2FetchEnd(p: ByteArray): Boolean = p.size >= 3 && p.u8(1) == FETCH_START && p.u8(2) == FETCH_END
+    fun isSpo2FetchEnd(p: ByteArray): Boolean =
+        p.size >= 3 && p.u8(1) == FETCH_START && p.u8(2) == FETCH_END
 
     /** `31 02` — end of the sleep fetch (the `32` stage packets on 34F2 never end it). */
-    fun isSleepEnd(p: ByteArray): Boolean = p.size >= 2 && p.u8(0) == OP_SLEEP_INFO && p.u8(1) == 0x02
+    fun isSleepEnd(p: ByteArray): Boolean =
+        p.size >= 2 && p.u8(0) == OP_SLEEP_INFO && p.u8(1) == 0x02
 
     /** `31 01 yyyy MM dd n` — the sleep session date (the morning). */
     fun sleepSessionDate(p: ByteArray): LocalDate? {
@@ -139,28 +144,84 @@ object Matchers {
         { p -> p.size >= 2 && p.u8(0) == 0xC5 && p.u8(1) == (idx and 0xFF) }
 
     /** `C5 FD <type> <total>`: the watch acknowledging the end of a notification. */
-    fun isNotifyEnd(p: ByteArray): Boolean = p.size >= 2 && p.u8(0) == 0xC5 && p.u8(1) == 0xFD
+    fun isNotifyEnd(p: ByteArray): Boolean =
+        p.size >= 2 && p.u8(0) == 0xC5 && p.u8(1) == 0xFD
 
-    fun opcodeIs(opcode: Int): (ByteArray) -> Boolean = { p -> p.isNotEmpty() && p.u8(0) == (opcode and 0xFF) }
+    fun opcodeIs(opcode: Int): (ByteArray) -> Boolean =
+        { p -> p.isNotEmpty() && p.u8(0) == (opcode and 0xFF) }
 
     /** Opcode and sub-code (byte 1) both match — for the `34 03` / `34 04` / `F7 01` style echoes. */
     fun opcodeAndSub(opcode: Int, sub: Int): (ByteArray) -> Boolean =
         { p -> p.size >= 2 && p.u8(0) == (opcode and 0xFF) && p.u8(1) == (sub and 0xFF) }
+
+    // ------------------------------------------------------------------------------------------
+    // Classic GloryFit watch-face control protocol (opcode 0x26).
+
+    /** Any classic GloryFit watch-face control packet: `26 ...`. */
+    fun isWatchFaceControl(p: ByteArray): Boolean =
+        p.isNotEmpty() && p.u8(0) == 0x26
+
+    /** `26 <sub>` watch-face control response. */
+    fun isWatchFaceControl(sub: Int): (ByteArray) -> Boolean =
+        { p ->
+            p.size >= 2 &&
+                p.u8(0) == 0x26 &&
+                p.u8(1) == (sub and 0xFF)
+        }
+
+    /** `26 03 <status>` watch-face transfer state. */
+    fun isWatchFaceTransferStatus(status: Int): (ByteArray) -> Boolean =
+        { p ->
+            p.size >= 3 &&
+                p.u8(0) == 0x26 &&
+                p.u8(1) == 0x03 &&
+                p.u8(2) == (status and 0xFF)
+        }
+
+    /** `26 03 00` — watch-face transfer completed successfully. */
+    fun isWatchFaceTransferSuccess(p: ByteArray): Boolean =
+        isWatchFaceTransferStatus(0x00)(p)
+
+    /** `26 03 04` — watch-face transfer flow-control/continue state. */
+    fun isWatchFaceTransferContinue(p: ByteArray): Boolean =
+        isWatchFaceTransferStatus(0x04)(p)
+
+    /**
+     * `26 03 03 <index-hi> <index-lo>` — watch requests that transfer resume/retry
+     * from the supplied big-endian section index.
+     */
+    fun watchFaceResumeIndex(p: ByteArray): Int? {
+        if (
+            p.size < 5 ||
+            p.u8(0) != 0x26 ||
+            p.u8(1) != 0x03 ||
+            p.u8(2) != 0x03
+        ) {
+            return null
+        }
+
+        return (p.u8(3) shl 8) or p.u8(4)
+    }
 }
 
 fun ByteArray.toHex(): String {
     val sb = StringBuilder(size * 2)
-    for (b in this) sb.append(String.format(Locale.ROOT, "%02x", b.toInt() and 0xFF))
+    for (b in this) {
+        sb.append(String.format(Locale.ROOT, "%02x", b.toInt() and 0xFF))
+    }
     return sb.toString()
 }
 
 fun String.hexToBytes(): ByteArray {
     val s = replace(" ", "").replace(":", "")
     require(s.length % 2 == 0) { "odd hex length" }
-    return ByteArray(s.length / 2) { i -> s.substring(2 * i, 2 * i + 2).toInt(16).toByte() }
+    return ByteArray(s.length / 2) {
+        i -> s.substring(2 * i, 2 * i + 2).toInt(16).toByte()
+    }
 }
 
-fun Int.toHex2(): String = String.format(Locale.ROOT, "%02X", this and 0xFF)
+fun Int.toHex2(): String =
+    String.format(Locale.ROOT, "%02X", this and 0xFF)
 
 // ---------------------------------------------------------------------------------------------- transport contract
 
@@ -177,7 +238,8 @@ interface WatchLink {
     /** The 20-byte feature bitmap read from 33F1 on connect (kept across reconnects), null before the first read. */
     val features: Features?
 
-    val isReady: Boolean get() = state.value is LinkState.Ready
+    val isReady: Boolean
+        get() = state.value is LinkState.Ready
 
     /** Connects (discover, MTU 247, notifications, feature read) or throws [GattException]. Idempotent when up. */
     suspend fun connect(mac: String)
@@ -192,7 +254,10 @@ interface WatchLink {
     suspend fun resetLink(reason: String) {}
 
     /** Writes one packet (write-without-response when the characteristic supports it) and waits for the write callback. */
-    suspend fun write(cmd: ByteArray, channel: WatchChannel = WatchChannel.CMD)
+    suspend fun write(
+        cmd: ByteArray,
+        channel: WatchChannel = WatchChannel.CMD,
+    )
 
     /** Waits for the next packet on [channel] matching [pred] without writing anything. */
     suspend fun waitFor(
@@ -247,34 +312,50 @@ interface WatchLink {
  */
 abstract class BaseWatchLink : WatchLink {
 
-    private class Waiter(val channel: WatchChannel, val take: (ByteArray) -> Boolean, val fail: (Throwable) -> Unit)
+    private class Waiter(
+        val channel: WatchChannel,
+        val take: (ByteArray) -> Boolean,
+        val fail: (Throwable) -> Unit,
+    )
 
     private val waiters = CopyOnWriteArrayList<Waiter>()
 
     private val packetFlow = MutableSharedFlow<RawPacket>(
-        replay = 0, extraBufferCapacity = 512, onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        replay = 0,
+        extraBufferCapacity = 512,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    override val packets: SharedFlow<RawPacket> get() = packetFlow
+    override val packets: SharedFlow<RawPacket>
+        get() = packetFlow
 
     /** Number of pending waiters (for diagnostics / tests). */
-    val pendingWaiters: Int get() = waiters.size
+    val pendingWaiters: Int
+        get() = waiters.size
 
     /** Offers one notification to the waiters, then publishes it on [packets]. Safe from any thread. */
-    protected fun dispatch(channel: WatchChannel, data: ByteArray, time: Long = System.currentTimeMillis()): RawPacket {
+    protected fun dispatch(
+        channel: WatchChannel,
+        data: ByteArray,
+        time: Long = System.currentTimeMillis(),
+    ): RawPacket {
         var consumed = false
+
         for (w in waiters) {
             if (w.channel != channel) continue
+
             val took = try {
                 w.take(data)
             } catch (e: RuntimeException) {
                 false
             }
+
             if (took) {
                 consumed = true
                 break
             }
         }
+
         val p = RawPacket(channel, data, time, consumed)
         packetFlow.tryEmit(p)
         return p
@@ -282,32 +363,79 @@ abstract class BaseWatchLink : WatchLink {
 
     /** Fails every pending request / collect (link lost). The owners remove themselves. */
     protected fun failWaiters(e: Throwable) {
-        for (w in waiters) w.fail(e)
+        for (w in waiters) {
+            w.fail(e)
+        }
     }
 
-    override suspend fun waitFor(pred: (ByteArray) -> Boolean, timeoutMs: Long, channel: WatchChannel): ByteArray {
+    override suspend fun waitFor(
+        pred: (ByteArray) -> Boolean,
+        timeoutMs: Long,
+        channel: WatchChannel,
+    ): ByteArray {
         val d = CompletableDeferred<ByteArray>()
-        val w = Waiter(channel, { p -> !d.isCompleted && pred(p) && d.complete(p) }, { e -> d.completeExceptionally(e) })
+
+        val w = Waiter(
+            channel,
+            { p -> !d.isCompleted && pred(p) && d.complete(p) },
+            { e -> d.completeExceptionally(e) },
+        )
+
         waiters += w
+
         try {
-            return withTimeoutOrNull(timeoutMs) { d.await() }
-                ?: throw GattException("no matching packet on ${channel.notifyName} within $timeoutMs ms", timeout = true)
+            return withTimeoutOrNull(timeoutMs) {
+                d.await()
+            } ?: throw GattException(
+                "no matching packet on ${channel.notifyName} within $timeoutMs ms",
+                timeout = true,
+            )
         } finally {
             waiters -= w
         }
     }
 
-    override suspend fun request(cmd: ByteArray, opcode: Int, timeoutMs: Long, channel: WatchChannel, replyChannel: WatchChannel): ByteArray =
-        request(cmd, Matchers.opcodeIs(opcode), timeoutMs, channel, replyChannel)
+    override suspend fun request(
+        cmd: ByteArray,
+        opcode: Int,
+        timeoutMs: Long,
+        channel: WatchChannel,
+        replyChannel: WatchChannel,
+    ): ByteArray =
+        request(
+            cmd,
+            Matchers.opcodeIs(opcode),
+            timeoutMs,
+            channel,
+            replyChannel,
+        )
 
-    override suspend fun request(cmd: ByteArray, pred: (ByteArray) -> Boolean, timeoutMs: Long, channel: WatchChannel, replyChannel: WatchChannel): ByteArray {
+    override suspend fun request(
+        cmd: ByteArray,
+        pred: (ByteArray) -> Boolean,
+        timeoutMs: Long,
+        channel: WatchChannel,
+        replyChannel: WatchChannel,
+    ): ByteArray {
         val d = CompletableDeferred<ByteArray>()
-        val w = Waiter(replyChannel, { p -> !d.isCompleted && pred(p) && d.complete(p) }, { e -> d.completeExceptionally(e) })
+
+        val w = Waiter(
+            replyChannel,
+            { p -> !d.isCompleted && pred(p) && d.complete(p) },
+            { e -> d.completeExceptionally(e) },
+        )
+
         waiters += w
+
         try {
             write(cmd, channel)
-            return withTimeoutOrNull(timeoutMs) { d.await() }
-                ?: throw GattException("no reply to ${cmd.toHex()} on ${replyChannel.notifyName} within $timeoutMs ms", timeout = true)
+
+            return withTimeoutOrNull(timeoutMs) {
+                d.await()
+            } ?: throw GattException(
+                "no reply to ${cmd.toHex()} on ${replyChannel.notifyName} within $timeoutMs ms",
+                timeout = true,
+            )
         } finally {
             waiters -= w
         }
@@ -326,40 +454,78 @@ abstract class BaseWatchLink : WatchLink {
         val done = CompletableDeferred<Unit>()
         val wanted = opcode and 0xFF
         val wantedExtra = extraOpcode?.and(0xFF)
+
         val take: (ByteArray) -> Boolean = { p ->
-            val op = if (p.isEmpty()) -1 else p[0].toInt() and 0xFF
+            val op =
+                if (p.isEmpty()) {
+                    -1
+                } else {
+                    p[0].toInt() and 0xFF
+                }
+
             if (done.isCompleted || (op != wanted && op != wantedExtra)) {
                 false
             } else {
-                synchronized(got) { got += p }
-                if (isEnd(p)) done.complete(Unit)
+                synchronized(got) {
+                    got += p
+                }
+
+                if (isEnd(p)) {
+                    done.complete(Unit)
+                }
+
                 true
             }
         }
-        val fail: (Throwable) -> Unit = { e -> done.completeExceptionally(e) }
+
+        val fail: (Throwable) -> Unit = { e ->
+            done.completeExceptionally(e)
+        }
+
         val ws = ArrayList<Waiter>(2)
         ws += Waiter(channel, take, fail)
-        if (extraChannel != null && extraChannel != channel) ws += Waiter(extraChannel, take, fail)
+
+        if (extraChannel != null && extraChannel != channel) {
+            ws += Waiter(extraChannel, take, fail)
+        }
+
         waiters.addAll(ws)
-        fun snapshot(): List<ByteArray> = synchronized(got) { ArrayList(got) }
+
+        fun snapshot(): List<ByteArray> =
+            synchronized(got) {
+                ArrayList(got)
+            }
+
         try {
             write(cmd, channel)
+
             val finished = withTimeoutOrNull(timeoutMs) {
                 done.await()
                 true
             } ?: false
+
             if (!finished) {
                 throw GattException(
                     "fetch ${cmd.toHex()} did not finish within $timeoutMs ms (${got.size} packets)",
-                    partial = snapshot(), timeout = true,
+                    partial = snapshot(),
+                    timeout = true,
                 )
             }
         } catch (e: GattException) {
-            if (e.partial.isEmpty() && got.isNotEmpty()) throw GattException(e.message ?: "fetch failed", snapshot(), e, e.timeout)
+            if (e.partial.isEmpty() && got.isNotEmpty()) {
+                throw GattException(
+                    e.message ?: "fetch failed",
+                    snapshot(),
+                    e,
+                    e.timeout,
+                )
+            }
+
             throw e
         } finally {
             waiters.removeAll(ws.toSet())
         }
+
         return snapshot()
     }
 }
