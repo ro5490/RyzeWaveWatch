@@ -43,8 +43,8 @@ data class WatchFaceConfigPacket(
     val height: Int,
     val screenType: Int,
     val maxDataSize: Long,
-    val compatibleLevel: Int,
-    val cornerAngle: Int,
+    val compatibleLevel: Int?,
+    val cornerAngle: Int?,
 )
 
 object Protocol {
@@ -413,8 +413,8 @@ object Protocol {
      *  17     corner angle
      */
     fun decWatchFaceConfig(b: ByteArray): WatchFaceConfigPacket {
-        require(b.size >= 18) {
-            "watch-face config must be at least 18 bytes, got ${b.size}: ${hex(b)}"
+        require(b.size >= 15) {
+            "watch-face config must be at least 15 bytes, got ${b.size}: ${hex(b)}"
         }
         require(b.u8(0) == CMD_WATCH_FACE && b.u8(1) == 0x01) {
             "not a 26 01 watch-face config packet: ${hex(b)}"
@@ -426,8 +426,10 @@ object Protocol {
             height = b.u16(8),
             screenType = b.u8(10),
             maxDataSize = b.u32(11),
-            compatibleLevel = b.u8(15),
-            cornerAngle = b.u8(17),
+            // RB112UDG/P32 returns a valid 15-byte base packet. Some
+            // GloryFit-family firmwares append these extension fields.
+            compatibleLevel = if (b.size >= 16) b.u8(15) else null,
+            cornerAngle = if (b.size >= 18) b.u8(17) else null,
         )
     }
 
