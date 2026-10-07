@@ -51,6 +51,9 @@ data class WatchFaceConfigPacket(
 data class WatchFaceBinInfo(
     val payloadSize: Int,
     val crc32: Long,
+    val dialId: Long? = null,
+    val width: Int? = null,
+    val height: Int? = null,
 )
 
 object Protocol {
@@ -225,27 +228,30 @@ object Protocol {
     }
 
     /**
-     * Validates the GloryFit `.BIN` container used by the P32 before any destructive
-     * `26 02` prepare command is allowed.
+     * Validates a classic GloryFit online-dial container before `26 02`.
      *
-     * Confirmed container fields:
-     *  - bytes 0..3: ASCII ".BIN"
+     * Two header variants are known:
+     *  - legacy/editor files may start with ASCII ".BIN";
+     *  - genuine P32 GloryFit downloads use bytes 0..3 as a little-endian dial ID.
+     *
+     * Fields confirmed in both genuine P32 samples:
      *  - bytes 4..7: payload length, little-endian u32
      *  - bytes 8..11: CRC-32 of bytes 24..end, little-endian u32
+     *  - bytes 12..13: width, little-endian u16
+     *  - bytes 14..15: height, little-endian u16
      *  - bytes 24..end: dial payload
+     *
+     * Length and CRC are mandatory for every accepted file.  P32-style files
+     * additionally expose their dial ID and dimensions to the caller.
      */
     fun validateWatchFaceBin(data: ByteArray): WatchFaceBinInfo {
         require(data.size >= WATCH_FACE_HEADER_BYTES) {
             "watch-face BIN is too short: ${data.size} bytes"
         }
-        require(
-            data[0] == '.'.code.toByte() &&
-                data[1] == 'B'.code.toByte() &&
-                data[2] == 'I'.code.toByte() &&
-                data[3] == 'N'.code.toByte()
-        ) {
-            "watch-face file does not start with .BIN"
-        }
+
+        fun u16le(offset: Int): Int =
+            data[offset].toInt().and(0xFF) or
+                (data[offset + 1].toInt().and(0xFF) shl 8)
 
         fun u32le(offset: Int): Long =
             data[offset].toLong().and(0xFF) or
@@ -267,10 +273,35 @@ object Protocol {
             "watch-face BIN CRC mismatch: header=${expectedCrc.toString(16)} actual=${actualCrc.toString(16)}"
         }
 
-        return WatchFaceBinInfo(
-            payloadSize = actualPayloadSize,
-            crc32 = actualCrc,
-        )
+        val legacyMagic =
+            data[0] == '.'.code.toByte() &&
+                data[1] == 'B'.code.toByte() &&
+                data[2] == 'I'.code.toByte() &&
+                data[3] == 'N'.code.toByte()
+
+        return if (legacyMagic) {
+            WatchFaceBinInfo(
+                payloadSize = actualPayloadSize,
+                crc32 = actualCrc,
+            )
+        } else {
+            val dialId = u32le(0)
+            val width = u16le(12)
+            val height = u16le(14)
+            require(dialId != 0L && dialId != 0xFFFFFFFFL) {
+                "watch-face BIN has invalid dial ID $dialId"
+            }
+            require(width in 1..2048 && height in 1..2048) {
+                "watch-face BIN has implausible dimensions ${width}x$height"
+            }
+            WatchFaceBinInfo(
+                payloadSize = actualPayloadSize,
+                crc32 = actualCrc,
+                dialId = dialId,
+                width = width,
+                height = height,
+            )
+        }
     }
 
     /** `A3 yyyy MM dd HH mm ss` — echoed back by the watch as the ack. */
