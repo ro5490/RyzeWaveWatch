@@ -16,6 +16,7 @@ import au.buzz.ryzewave.core.WatchApi
 import au.buzz.ryzewave.core.WatchEvent
 import au.buzz.ryzewave.core.WatchStatus
 import au.buzz.ryzewave.core.WatchFaceConfig
+import au.buzz.ryzewave.core.WatchFaceUploadProgress
 import au.buzz.ryzewave.core.WorkoutControlAction
 import au.buzz.ryzewave.protocol.Packet
 import au.buzz.ryzewave.protocol.Protocol
@@ -1645,6 +1646,144 @@ class WatchApiImpl(
         }
     }
 
+    /**
+     * Installs a classic GloryFit online-dial `.BIN`.
+     *
+     * The file is fully validated before `26 02` is sent. Data is written to 34F1 as
+     * `27 <section> <payload>` packets. The P32 reports flow control on 33F2 with
+     * `26 03 xx`; GloryFit groups 16 data sections per flow-control acknowledgement.
+     * Each batch is sent with its waiter already registered.
+     */
+    override suspend fun uploadWatchFace(
+        data: ByteArray,
+        onProgress: (WatchFaceUploadProgress) -> Unit,
+    ): Boolean = syncMutex.withLock {
+        requireReady()
+
+        Protocol.validateWatchFaceBin(data)
+
+        val config = getWatchFaceConfig()
+            ?: throw GattException("watch did not return 26 01 watch-face configuration")
+
+        require(data.size.toLong() <= config.maxDataSize) {
+            "watch-face BIN is ${data.size} bytes; watch limit is ${config.maxDataSize} bytes"
+        }
+
+        val ready = link.state.value as? LinkState.Ready
+            ?: throw GattException("watch is not connected")
+
+        // ATT writes carry at most MTU - 3 bytes. The 27 packet consumes three
+        // more bytes for opcode + 16-bit section index.
+        val payloadBytes = (ready.mtu - 6).coerceAtLeast(1)
+        val sectionCount = (data.size + payloadBytes - 1) / payloadBytes
+        require(sectionCount <= 0x10000) {
+            "watch-face requires $sectionCount sections; protocol limit is 65536"
+        }
+
+        log(
+            "watch-face upload: ${data.size} bytes, mtu=${ready.mtu}, " +
+                "payload=$payloadBytes, sections=$sectionCount",
+            null
+        )
+
+        link.request(
+            Protocol.encWatchFacePrepare(),
+            Matchers.isWatchFaceControl(0x02),
+            WATCH_FACE_CONTROL_TIMEOUT_MS,
+            WatchChannel.CMD,
+            WatchChannel.CMD,
+        )
+
+        var section = 0
+        var sent = 0
+        var retries = 0
+
+        onProgress(WatchFaceUploadProgress(0, data.size.toLong()))
+
+        while (sent < data.size) {
+            val batchEndSection =
+                min(section + WATCH_FACE_SECTIONS_PER_FLOW_ACK, sectionCount)
+
+            val status = link.waitForDuring(
+                action = {
+                    while (sent < data.size && section < batchEndSection) {
+                        val end = min(sent + payloadBytes, data.size)
+                        val payload = data.copyOfRange(sent, end)
+                        link.write(
+                            Protocol.encWatchFaceDataSection(section, payload),
+                            WatchChannel.DATA,
+                        )
+                        sent = end
+                        section += 1
+                        onProgress(
+                            WatchFaceUploadProgress(
+                                bytesSent = sent.toLong(),
+                                totalBytes = data.size.toLong(),
+                            )
+                        )
+                    }
+                },
+                pred = { p ->
+                    p.size >= 3 &&
+                        Protocol.opcode(p) == Protocol.CMD_WATCH_FACE &&
+                        Protocol.sub(p) == 0x03
+                },
+                timeoutMs = WATCH_FACE_FLOW_TIMEOUT_MS,
+                channel = WatchChannel.CMD,
+            )
+
+            when (status.getOrNull(2)?.toInt()?.and(0xFF)) {
+                0x04 -> {
+                    retries = 0
+                }
+
+                0x03 -> {
+                    val requested = Matchers.watchFaceResumeIndex(status)
+                        ?: throw GattException(
+                            "watch requested malformed watch-face resume: ${Protocol.hex(status)}"
+                        )
+                    require(requested < sectionCount) {
+                        "watch requested invalid watch-face section $requested of $sectionCount"
+                    }
+                    retries += 1
+                    if (retries > WATCH_FACE_MAX_RESUME_RETRIES) {
+                        throw GattException("watch-face transfer exceeded resume retry limit")
+                    }
+                    section = requested
+                    sent = requested * payloadBytes
+                    onProgress(
+                        WatchFaceUploadProgress(
+                            bytesSent = sent.toLong(),
+                            totalBytes = data.size.toLong(),
+                        )
+                    )
+                }
+
+                0x01 -> throw GattException("watch rejected watch-face transfer")
+                0x02 -> throw GattException("watch reported watch-face CRC/data failure")
+                0x00 -> {
+                    // Some firmware may report success immediately after the final data block.
+                    return@withLock true
+                }
+
+                else -> throw GattException(
+                    "unknown watch-face transfer status: ${Protocol.hex(status)}"
+                )
+            }
+        }
+
+        val finish = link.request(
+            Protocol.encWatchFaceFinish(),
+            Matchers::isWatchFaceTransferSuccess,
+            WATCH_FACE_FINISH_TIMEOUT_MS,
+            WatchChannel.CMD,
+            WatchChannel.CMD,
+        )
+
+        log("watch-face upload complete: ${Protocol.hex(finish)}", null)
+        true
+    }
+
     // ------------------------------------------------------------------
     // Misc
     // ------------------------------------------------------------------
@@ -2272,6 +2411,21 @@ class WatchApiImpl(
 
         const val QUERY_TIMEOUT_MS =
             2_000L
+
+        const val WATCH_FACE_CONTROL_TIMEOUT_MS =
+            8_000L
+
+        const val WATCH_FACE_FLOW_TIMEOUT_MS =
+            8_000L
+
+        const val WATCH_FACE_FINISH_TIMEOUT_MS =
+            15_000L
+
+        const val WATCH_FACE_SECTIONS_PER_FLOW_ACK =
+            16
+
+        const val WATCH_FACE_MAX_RESUME_RETRIES =
+            3
 
         const val CONTROL_TIMEOUT_MS =
             8_000L
