@@ -1660,13 +1660,20 @@ class WatchApiImpl(
     ): Boolean = syncMutex.withLock {
         requireReady()
 
-        Protocol.validateWatchFaceBin(data)
+        val binInfo = Protocol.validateWatchFaceBin(data)
 
         val config = getWatchFaceConfig()
             ?: throw GattException("watch did not return 26 01 watch-face configuration")
 
         require(data.size.toLong() <= config.maxDataSize) {
             "watch-face BIN is ${data.size} bytes; watch limit is ${config.maxDataSize} bytes"
+        }
+
+        if (binInfo.width != null && binInfo.height != null) {
+            require(binInfo.width == config.width && binInfo.height == config.height) {
+                "watch-face BIN is ${binInfo.width}x${binInfo.height}; " +
+                    "watch requires ${config.width}x${config.height}"
+            }
         }
 
         val ready = link.state.value as? LinkState.Ready
