@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -175,7 +176,8 @@ fun DashboardScreen(
                 onConnect,
                 vm::disconnect,
                 vm::sync,
-                vm::syncLiveWeather
+                vm::syncLiveWeather,
+                vm::testWeatherCondition
             )
 
             StepsCard(
@@ -300,7 +302,9 @@ private fun ConnectionCard(
     onDisconnect: () -> Unit,
     onSync: () -> Unit,
     onReplayWeather: () -> Unit,
+    onTestWeatherCondition: (Int) -> Unit,
 ) {
+    var testCondition by remember { mutableIntStateOf(1) }
     val working =
         busy ||
             status.state ==
@@ -461,7 +465,14 @@ private fun ConnectionCard(
                     onClick = onReplayWeather,
                     enabled = status.isConnected() && !working
                 ) {
-                    Text("Sync weather (live temperatures)")
+                    Text("Sync weather (live conditions - experimental)")
+                }
+                Text("P32 condition code tester (1–12). Experimental; updates the watch immediately.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { if (testCondition > 1) testCondition-- }, enabled = !working && testCondition > 1) { Text("−") }
+                    Text("Code $testCondition")
+                    OutlinedButton(onClick = { if (testCondition < 12) testCondition++ }, enabled = !working && testCondition < 12) { Text("+") }
+                    Button(onClick = { onTestWeatherCondition(testCondition) }, enabled = status.isConnected() && !working) { Text("Test code") }
                 }
             }
         }

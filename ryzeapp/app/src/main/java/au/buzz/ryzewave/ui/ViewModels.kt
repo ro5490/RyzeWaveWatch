@@ -172,7 +172,7 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
                     P32WeatherRefreshState.inProgress = true
                     try {
                         val forecast = P32WeatherSource.fetch(App.instance)
-                        graph.watch.syncP32Weather(forecast)
+                        graph.watch.syncP32Weather(forecast.temperatures, forecast.conditions)
                         P32WeatherRefreshState.lastSuccessfulSyncMs = System.currentTimeMillis()
                         Log.i(TAG, "P32 automatic temperature sync completed")
                     } catch (e: CancellationException) {
@@ -225,10 +225,19 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
     }
 
     fun syncLiveWeather() = task("Live weather") {
-        val temperatures = P32WeatherSource.fetch(App.instance)
-        graph.watch.syncP32Weather(temperatures)
+        val forecast = P32WeatherSource.fetch(App.instance)
+        graph.watch.syncP32Weather(forecast.temperatures, forecast.conditions)
         P32WeatherRefreshState.lastSuccessfulSyncMs = System.currentTimeMillis()
-        "Live temperatures sent: ${temperatures[0].first}°C (high ${temperatures[0].second}°, low ${temperatures[0].third}°). Condition icon remains experimental."
+        "Live temperatures sent: ${forecast.temperatures[0].first}°C (high ${forecast.temperatures[0].second}°, low ${forecast.temperatures[0].third}°). Condition codes are experimental."
+    }
+
+    fun testWeatherCondition(code: Int) = task("Weather condition test") {
+        require(code in 1..12)
+        val forecast = P32WeatherSource.fetch(App.instance)
+        graph.watch.syncP32Weather(forecast.temperatures, List(7) { code })
+        // Do not reset the automatic refresh interval: a later normal sync should
+        // restore live conditions.
+        "P32 experimental condition code $code sent. Check the watch icon."
     }
 
     fun replayWeather() = task("Weather test") {

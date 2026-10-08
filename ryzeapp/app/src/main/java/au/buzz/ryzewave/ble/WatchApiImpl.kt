@@ -120,10 +120,11 @@ class WatchApiImpl(
         }
     }
 
-    override suspend fun syncP32Weather(temperatures: List<Triple<Int, Int, Int>>) {
+    override suspend fun syncP32Weather(temperatures: List<Triple<Int, Int, Int>>, conditions: List<Int>) {
         requireReady()
         check(supportsP32WeatherReplay()) { "Weather sync is P32-only" }
         require(temperatures.size == 7) { "Seven forecast days required" }
+        require(conditions.size == 7 && conditions.all { it in 1..12 }) { "Seven P32 condition codes (1..12) required" }
         // Preserve the confirmed GloryFit packet framing and unknown condition/metadata fields.
         // Only temperature bytes are replaced; icon/condition decoding needs more captures.
         val packets = listOf(
@@ -149,6 +150,13 @@ class WatchApiImpl(
             set(2, offset, temperatures[day].second)
             set(2, offset + 1, temperatures[day].third)
         }
+        // Candidate condition positions. The original capture does not fully establish
+        // the day-to-byte mapping; keep manual testing available for validation.
+        packets[0][8] = conditions[0].toByte()
+        packets[1][6] = conditions[1].toByte()
+        packets[1][10] = conditions[2].toByte()
+        packets[1][14] = conditions[3].toByte()
+        packets[2][6] = conditions[5].toByte()
         syncMutex.withLock {
             packets.forEachIndexed { index, bytes ->
                 link.request(bytes, pred = { p -> p.size >= 2 && (p[0].toInt() and 255) == 0xCB && (p[1].toInt() and 255) == index + 1 }, timeoutMs = 5_000L)

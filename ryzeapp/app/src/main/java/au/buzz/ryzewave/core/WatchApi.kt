@@ -62,7 +62,7 @@ interface WatchApi {
     suspend fun replayCapturedWeather() { throw UnsupportedOperationException("Weather replay unavailable") }
 
     /** Send current and seven-day Celsius temperatures to P32. Weather icons remain experimental. */
-    suspend fun syncP32Weather(temperatures: List<Triple<Int, Int, Int>>) { throw UnsupportedOperationException("P32 weather unavailable") }
+    suspend fun syncP32Weather(temperatures: List<Triple<Int, Int, Int>>, conditions: List<Int> = List(7) { 1 }) { throw UnsupportedOperationException("P32 weather unavailable") }
 
     suspend fun startLiveHr()
     suspend fun stopLiveHr()
