@@ -132,6 +132,9 @@ enum class WorkoutControlAction {
 }
 
 sealed class WatchEvent {
+    /** Watch-originated D1 music button. */
+    data class MusicControl(val action: Int) : WatchEvent()
+
     data class Spo2Result(
         val time: Long,
         val percent: Int?
