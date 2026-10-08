@@ -6,8 +6,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import au.buzz.ryzewave.core.HrSample
@@ -71,13 +78,38 @@ fun HealthTrendCard(
             else {
                 Text("${valid.size} periods with data · average ${"%.1f".format(valid.average())} ${if (heartRate) "bpm" else "h asleep"}")
                 val color = MaterialTheme.colorScheme.primary
-                Canvas(Modifier.fillMaxWidth().height(190.dp)) {
-                    val gap = size.width / count
-                    values.forEachIndexed { i, value ->
-                        if (value != null) {
-                            val x = (i + 0.5f) * gap
-                            val y = size.height * (1f - (value / maximum).toFloat())
-                            drawLine(color, Offset(x, size.height), Offset(x, y), strokeWidth = (gap * 0.65f).coerceAtLeast(1f))
+                val gridColor = MaterialTheme.colorScheme.outlineVariant
+                var zoom by remember(rangeDays, heartRate) { mutableIntStateOf(1) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { zoom = (zoom - 1).coerceAtLeast(1) }, enabled = zoom > 1) { Text("−") }
+                    OutlinedButton(onClick = { zoom = (zoom + 1).coerceAtMost(8) }, enabled = zoom < 8) { Text("+") }
+                    TextButton(onClick = { zoom = 1 }, enabled = zoom != 1) { Text("Reset zoom") }
+                }
+                val scroll = rememberScrollState()
+                Box(Modifier.fillMaxWidth().horizontalScroll(scroll)) {
+                    BoxWithConstraints {
+                        val graphWidth = maxWidth * zoom.toFloat()
+                        Canvas(Modifier.width(graphWidth).height(210.dp)) {
+                            val top = 12.dp.toPx()
+                            val bottom = size.height - 14.dp.toPx()
+                            val graphHeight = bottom - top
+                            for (j in 0..4) {
+                                val y = top + graphHeight * j / 4f
+                                drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+                            }
+                            val dx = if (count > 1) size.width / (count - 1) else 0f
+                            val radius = 3.dp.toPx()
+                            var previous: Offset? = null
+                            values.forEachIndexed { i, value ->
+                                if (value == null) {
+                                    previous = null // Never join a gap in recorded data.
+                                } else {
+                                    val point = Offset(i * dx, bottom - (value / maximum).toFloat() * graphHeight)
+                                    previous?.let { drawLine(color, it, point, strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round) }
+                                    drawCircle(color, radius, point)
+                                    previous = point
+                                }
+                            }
                         }
                     }
                 }
