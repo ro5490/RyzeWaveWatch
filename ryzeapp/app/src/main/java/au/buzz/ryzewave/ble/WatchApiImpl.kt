@@ -93,6 +93,36 @@ class WatchApiImpl(
     )
     override val events: SharedFlow<WatchEvent> = _events
 
+    /**
+     * Diagnostic weather replay with deliberately exaggerated test values (50C, high 55C).
+     * These values are STALE; do not use as a production weather provider.
+     * Each packet was observed on the CMD channel followed by CB/sequence ACK.
+     */
+    override suspend fun replayCapturedWeather() {
+        requireReady()
+        check(supportsP32WeatherReplay()) { "Weather replay is P32-only" }
+        syncMutex.withLock {
+            for ((sequence, hex) in listOf(
+                "CB010700323709000100500000000000000000",
+                "CB020700120A02000F0907000E090700150E",
+                "CB030700140E0700120B",
+            ).withIndex()) {
+                val bytes = ByteArray(hex.length / 2) { i ->
+                    hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+                }
+                val reply = link.request(
+                    bytes,
+                    pred = { p -> p.size >= 2 && (p[0].toInt() and 255) == 0xCB && (p[1].toInt() and 255) == sequence + 1 },
+                    timeoutMs = 5_000L,
+                )
+                log("weather replay ACK ${sequence + 1}: ${reply.joinToString("") { "%02X".format(it.toInt() and 255) }}", null)
+            }
+        }
+    }
+
+    private fun supportsP32WeatherReplay(): Boolean =
+        _status.value.firmware.orEmpty().startsWith("RB112UDG", ignoreCase = true)
+
     private val syncMutex = Mutex()
 
     @Volatile
