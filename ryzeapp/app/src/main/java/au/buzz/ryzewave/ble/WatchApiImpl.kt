@@ -120,6 +120,42 @@ class WatchApiImpl(
         }
     }
 
+    override suspend fun syncP32Weather(temperatures: List<Triple<Int, Int, Int>>) {
+        requireReady()
+        check(supportsP32WeatherReplay()) { "Weather sync is P32-only" }
+        require(temperatures.size == 7) { "Seven forecast days required" }
+        // Preserve the confirmed GloryFit packet framing and unknown condition/metadata fields.
+        // Only temperature bytes are replaced; icon/condition decoding needs more captures.
+        val packets = listOf(
+            "CB0107000B0F09000100500000000000000000",
+            "CB020700120A02000F0907000E090700150E",
+            "CB030700140E0700120B",
+        ).map { hex -> ByteArray(hex.length / 2) { i -> hex.substring(i * 2, i * 2 + 2).toInt(16).toByte() } }
+        fun set(packet: Int, offset: Int, value: Int) {
+            require(value in -40..85) { "Weather temperature outside supported test range: $value" }
+            packets[packet][offset] = value.toByte()
+        }
+        set(0, 4, temperatures[0].first)
+        set(0, 5, temperatures[0].second)
+        set(0, 6, temperatures[0].third)
+        // Each subsequent day has a high/low pair followed by captured condition metadata.
+        for (day in 1..4) {
+            val offset = 4 + (day - 1) * 4
+            set(1, offset, temperatures[day].second)
+            set(1, offset + 1, temperatures[day].third)
+        }
+        for (day in 5..6) {
+            val offset = 4 + (day - 5) * 4
+            set(2, offset, temperatures[day].second)
+            set(2, offset + 1, temperatures[day].third)
+        }
+        syncMutex.withLock {
+            packets.forEachIndexed { index, bytes ->
+                link.request(bytes, pred = { p -> p.size >= 2 && (p[0].toInt() and 255) == 0xCB && (p[1].toInt() and 255) == index + 1 }, timeoutMs = 5_000L)
+            }
+        }
+    }
+
     private fun supportsP32WeatherReplay(): Boolean =
         _status.value.firmware.orEmpty().startsWith("RB112UDG", ignoreCase = true)
 

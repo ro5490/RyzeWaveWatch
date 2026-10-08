@@ -192,6 +192,12 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
         null
     }
 
+    fun syncLiveWeather() = task("Live weather") {
+        val temperatures = P32WeatherSource.fetch(App.instance)
+        graph.watch.syncP32Weather(temperatures)
+        "Live temperatures sent: ${temperatures[0].first}°C (high ${temperatures[0].second}°, low ${temperatures[0].third}°). Condition icon remains experimental."
+    }
+
     fun replayWeather() = task("Weather test") {
         graph.watch.replayCapturedWeather()
         "Captured GloryFit weather replay sent (historical data, not live weather)"

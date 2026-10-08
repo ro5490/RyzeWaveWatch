@@ -175,7 +175,7 @@ fun DashboardScreen(
                 onConnect,
                 vm::disconnect,
                 vm::sync,
-                vm::replayWeather
+                vm::syncLiveWeather
             )
 
             StepsCard(
@@ -461,7 +461,7 @@ private fun ConnectionCard(
                     onClick = onReplayWeather,
                     enabled = status.isConnected() && !working
                 ) {
-                    Text("Test P32 weather (captured)")
+                    Text("Sync weather (live temperatures)")
                 }
             }
         }
