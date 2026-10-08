@@ -461,20 +461,42 @@ private fun ConnectionCard(
                 ) {
                     Text("Sync now")
                 }
-                OutlinedButton(
-                    onClick = onReplayWeather,
-                    enabled = status.isConnected() && !working
-                ) {
-                    Text("Sync weather (live conditions - experimental)")
-                }
-                Text("P32 condition code tester (1–12). Experimental; updates the watch immediately.")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { if (testCondition > 1) testCondition-- }, enabled = !working && testCondition > 1) { Text("−") }
-                    Text("Code $testCondition")
-                    OutlinedButton(onClick = { if (testCondition < 12) testCondition++ }, enabled = !working && testCondition < 12) { Text("+") }
-                    Button(onClick = { onTestWeatherCondition(testCondition) }, enabled = status.isConnected() && !working) { Text("Test code") }
-                }
             }
+
+            // Keep weather actions outside the connection-button Row. A long label
+            // inside that Row forces a very narrow button and expands its height.
+            OutlinedButton(
+                onClick = onReplayWeather,
+                enabled = status.isConnected() && !working,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Sync weather")
+            }
+
+            Text(
+                "Condition code tester (experimental)",
+                style = MaterialTheme.typography.labelMedium
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = { if (testCondition > 1) testCondition-- },
+                    enabled = !working && testCondition > 1
+                ) { Text("−") }
+                Text("$testCondition / 12")
+                OutlinedButton(
+                    onClick = { if (testCondition < 12) testCondition++ },
+                    enabled = !working && testCondition < 12
+                ) { Text("+") }
+            }
+            Button(
+                onClick = { onTestWeatherCondition(testCondition) },
+                enabled = status.isConnected() && !working,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Test selected condition") }
         }
     }
 }
