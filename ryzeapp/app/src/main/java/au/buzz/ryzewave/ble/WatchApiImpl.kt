@@ -2242,6 +2242,11 @@ class WatchApiImpl(
                 }
             }
 
+            is Packet.MusicControl -> {
+                log("P32 music button D1 ${p.action.toString(16)}", null)
+                _events.tryEmit(WatchEvent.MusicControl(p.action))
+            }
+
             is Packet.FindPhone -> {
 
                 _events.tryEmit(
