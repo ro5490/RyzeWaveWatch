@@ -55,7 +55,10 @@ fun HealthTrendCard(
             if (stage.stage == SleepStage.AWAKE || stage.minutes <= 0) continue
             val wakeDay = Fmt.dayStart(stage.start + 12L * 60 * 60 * 1000)
             val i = bucket(wakeDay)
-            if (i in 0 until count) { minutes[i] += stage.minutes; present[i] = true }
+            if (i in 0 until count) {
+                minutes[i] = minutes[i] + stage.minutes.toDouble()
+                present[i] = true
+            }
         }
         for (i in 0 until count) if (present[i]) values[i] = minutes[i] / 60.0
     }
