@@ -242,6 +242,9 @@ object GraphFactory {
         )
         scope.launch { watch.events.collect { findPhone.onEvent(it) } }
 
+        val musicController = au.buzz.ryzewave.notify.WatchMusicController(app)
+        scope.launch { watch.events.collect { musicController.onEvent(it) } }
+
         // Stuck-in-exercise-mode detector (docs/PLAN.md): every workout — the app's own and one the watch started by
         // itself — is judged against its sport's expected activity signature over a rolling window. No expected
         // signal for the whole window → spoken warning + high-priority notification with Stop, then an auto-stop
