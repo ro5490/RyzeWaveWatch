@@ -3,6 +3,9 @@
 package au.buzz.ryzewave.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -208,7 +211,7 @@ private fun DailyCard(
         trailing = {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 UiDefaults.HISTORY_RANGES.forEach { d ->
-                    FilterChip(selected = range == d, onClick = { onRange(d) }, label = { Text("$d d") })
+                    FilterChip(selected = range == d, onClick = { onRange(d) }, label = { Text(when (d) { 7 -> "Week"; 30 -> "Month"; 365 -> "Year"; else -> "$d d" }) })
                 }
             }
         },
@@ -279,7 +282,24 @@ fun ChartCard(
                     trailing?.invoke()
                 }
                 Spacer(Modifier.height(8.dp))
-                chart(chartColors(dotFill = container))
+                var zoom by rememberSaveable(title + "-zoom") { mutableStateOf(1) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Zoom", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { zoom = (zoom - 1).coerceAtLeast(1) }, enabled = zoom > 1) { Text("−") }
+                    Text("${zoom}×", style = MaterialTheme.typography.labelMedium)
+                    TextButton(onClick = { zoom = (zoom + 1).coerceAtMost(8) }, enabled = zoom < 8) { Text("+") }
+                    TextButton(onClick = { zoom = 1 }, enabled = zoom != 1) { Text("Reset") }
+                }
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val viewportWidth = maxWidth
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    ) {
+                        CompositionLocalProvider(LocalChartWidth provides viewportWidth * zoom) {
+                            chart(chartColors(dotFill = container))
+                        }
+                    }
+                }
             }
         }
         if (stats.isNotEmpty()) StatsRow(stats)
