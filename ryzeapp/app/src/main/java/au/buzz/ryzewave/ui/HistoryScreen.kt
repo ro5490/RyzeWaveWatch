@@ -75,7 +75,8 @@ fun HistoryScreen(vm: HistoryViewModel = viewModel()) {
     ) {
         DayNavigator(day, onPrevious = vm::previousDay, onNext = vm::nextDay, onToday = vm::today)
         HrCard(day, hr)
-        Spo2Card(day, spo2)
+        val firmware by au.buzz.ryzewave.App.graph.watch.status.collectAsStateWithLifecycle()
+        if (!firmware.firmware.orEmpty().startsWith("RB112UDG", ignoreCase = true)) Spo2Card(day, spo2)
         StepsHourCard(day, steps, summary, profile.stepGoal)
         DailyCard(daily, range, profile.stepGoal, day, onRange = vm::setRange, onSelectDay = vm::selectDay)
         SleepCard(day, sleep)
