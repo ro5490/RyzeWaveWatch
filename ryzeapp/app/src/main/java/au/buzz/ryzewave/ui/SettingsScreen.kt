@@ -120,7 +120,8 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                 onChoose = vm::chooseDevice, onFind = vm::findWatch,
             )
             ProfileSection(profile, onSave = vm::saveProfile)
-            SamplingSection(sampling, onChange = vm::saveSampling)
+            val watchStatus by au.buzz.ryzewave.App.graph.watch.status.collectAsStateWithLifecycle()
+            SamplingSection(sampling, onChange = vm::saveSampling, showSpo2 = !watchStatus.firmware.orEmpty().startsWith("RB112UDG", ignoreCase = true))
             StrideSection(
                 profile = profile, stride = stride, calibrationWorkout = calibrationWorkout,
                 onSave = vm::saveStride, onReset = vm::resetStride, onCalibrate = vm::calibrateFromLastWorkout,
@@ -375,9 +376,10 @@ private fun ProfileSection(profile: UserProfile, onSave: (UserProfile) -> Unit) 
 // ---- sampling ---------------------------------------------------------------------------------------------
 
 @Composable
-private fun SamplingSection(sampling: SamplingSettings, onChange: (SamplingSettings) -> Unit) {
+private fun SamplingSection(sampling: SamplingSettings, onChange: (SamplingSettings) -> Unit, showSpo2: Boolean) {
     SectionCard("Sampling") {
         SwitchRow("Continuous heart rate (10-minute bins)", sampling.continuousHr) { onChange(sampling.copy(continuousHr = it)) }
+        if (showSpo2) {
         SwitchRow("Automatic SpO2", sampling.spo2AutoEnabled) { onChange(sampling.copy(spo2AutoEnabled = it)) }
         Text("SpO2 interval", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -389,6 +391,7 @@ private fun SamplingSection(sampling: SamplingSettings, onChange: (SamplingSetti
                     label = { Text("$min min") },
                 )
             }
+        }
         }
         SwitchRow("Raise wrist to wake", sampling.raiseWristWake) { onChange(sampling.copy(raiseWristWake = it)) }
 
