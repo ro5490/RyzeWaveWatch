@@ -7,10 +7,12 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,7 +55,14 @@ import kotlin.math.roundToInt
 
 val ChartHeight: Dp = 200.dp
 
-fun Modifier.chartSize(): Modifier = fillMaxWidth().height(ChartHeight)
+/** A chart can be wider than its viewport when the user zooms in. */
+val LocalChartWidth = compositionLocalOf<androidx.compose.ui.unit.Dp?> { null }
+
+@Composable
+fun Modifier.chartSize(): Modifier {
+    val width = LocalChartWidth.current
+    return (if (width == null) this.fillMaxWidth() else this.width(width)).height(ChartHeight)
+}
 
 /** Colours a chart draws with; defaults derive from the current content colour so they work on any card. */
 data class ChartColors(
