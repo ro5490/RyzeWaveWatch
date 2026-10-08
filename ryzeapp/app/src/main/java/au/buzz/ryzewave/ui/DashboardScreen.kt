@@ -193,6 +193,7 @@ fun DashboardScreen(
                 now = now,
                 connected = status.isConnected(),
                 onMeasureHr = vm::measureHr,
+                showSpo2 = !status.firmware.orEmpty().startsWith("RB112UDG", ignoreCase = true),
                 onSpo2 = vm::spo2Test,
                 onBloodPressure = vm::bloodPressureTest,
             )
@@ -663,6 +664,7 @@ private fun VitalsCard(
     connected: Boolean,
     onMeasureHr: () -> Unit,
     onSpo2: () -> Unit,
+    showSpo2: Boolean,
     onBloodPressure: () -> Unit,
 ) {
     val live =
@@ -747,7 +749,7 @@ private fun VitalsCard(
                 }
             }
 
-            Row(
+            if (showSpo2) Row(
                 horizontalArrangement =
                     Arrangement.spacedBy(24.dp)
             ) {
@@ -949,7 +951,7 @@ private fun VitalsCard(
                 }
             }
 
-            Row(
+            if (showSpo2) Row(
                 horizontalArrangement =
                     Arrangement.spacedBy(8.dp)
             ) {
