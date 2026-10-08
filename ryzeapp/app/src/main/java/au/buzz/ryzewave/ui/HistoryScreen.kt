@@ -67,6 +67,9 @@ fun HistoryScreen(vm: HistoryViewModel = viewModel()) {
     val summary by vm.summary.collectAsStateWithLifecycle()
     val daily by vm.daily.collectAsStateWithLifecycle()
     val range by vm.rangeDays.collectAsStateWithLifecycle()
+    val healthRange by vm.healthRangeDays.collectAsStateWithLifecycle()
+    val hrTrend by vm.hrTrend.collectAsStateWithLifecycle()
+    val sleepTrend by vm.sleepTrend.collectAsStateWithLifecycle()
     val profile by vm.profile.collectAsStateWithLifecycle()
 
     Column(
@@ -77,12 +80,15 @@ fun HistoryScreen(vm: HistoryViewModel = viewModel()) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         DayNavigator(day, onPrevious = vm::previousDay, onNext = vm::nextDay, onToday = vm::today)
-        HrCard(day, hr)
+        HealthRangePicker(healthRange, vm::setHealthRange)
+        if (healthRange == 1) HrCard(day, hr)
+        else HealthTrendCard("Heart rate", day, healthRange, hrTrend, sleepTrend, true)
         val firmware by au.buzz.ryzewave.App.graph.watch.status.collectAsStateWithLifecycle()
         if (!firmware.firmware.orEmpty().startsWith("RB112UDG", ignoreCase = true)) Spo2Card(day, spo2)
         StepsHourCard(day, steps, summary, profile.stepGoal)
         DailyCard(daily, range, profile.stepGoal, day, onRange = vm::setRange, onSelectDay = vm::selectDay)
-        SleepCard(day, sleep)
+        if (healthRange == 1) SleepCard(day, sleep)
+        else HealthTrendCard("Sleep", day, healthRange, hrTrend, sleepTrend, false)
     }
 }
 

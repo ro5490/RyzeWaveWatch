@@ -328,6 +328,32 @@ class HistoryViewModel(private val graph: Graph = App.graph) : RyzeViewModel() {
         _day.flatMapLatest { graph.repo.hrBetween(it, Fmt.dayEnd(it)) }
             .stateIn(viewModelScope, started(), emptyList())
 
+    /** Shared history period for heart-rate and sleep trends. */
+    private val _healthRangeDays = MutableStateFlow(1)
+    val healthRangeDays: StateFlow<Int> = _healthRangeDays.asStateFlow()
+
+    fun setHealthRange(days: Int) {
+        require(days in listOf(1, 7, 30, 365))
+        _healthRangeDays.value = days
+    }
+
+    /** Query one bounded range rather than subscribing to hundreds of daily flows. */
+    val hrTrend: StateFlow<List<HrSample>> = combine(_day, _healthRangeDays) { day, range ->
+        Fmt.plusDays(day, 1L - range) to Fmt.dayEnd(day)
+    }.flatMapLatest { (start, end) -> graph.repo.hrBetween(start, end) }
+        .stateIn(viewModelScope, started(), emptyList())
+
+    /** One-shot sleep query, refreshed after sync and when the period/day changes. */
+    val sleepTrend: StateFlow<List<SleepStage>> = combine(
+        _day, _healthRangeDays,
+        graph.watch.status.map { it.lastSyncTime }.distinctUntilChanged(),
+    ) { day, range, _ ->
+        val firstDay = Fmt.plusDays(day, 1L - range)
+        // Sleep nights end on the selected morning: previous noon through selected noon.
+        (firstDay - 12L * 60 * 60 * 1000) to (day + 12L * 60 * 60 * 1000)
+    }.mapLatest { (start, end) -> graph.repo.sleepBetween(start, end) }
+        .stateIn(viewModelScope, started(), emptyList())
+
     val spo2: StateFlow<List<Spo2Sample>> =
         _day.flatMapLatest { graph.repo.spo2Between(it, Fmt.dayEnd(it)) }
             .stateIn(viewModelScope, started(), emptyList())
