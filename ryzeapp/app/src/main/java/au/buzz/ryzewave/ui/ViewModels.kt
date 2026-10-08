@@ -106,6 +106,12 @@ abstract class RyzeViewModel : ViewModel() {
     }
 }
 
+/** Shared across dashboard recreations to avoid repeated connection-triggered requests. */
+private object P32WeatherRefreshState {
+    @Volatile var lastSuccessfulSyncMs: Long = 0L
+    @Volatile var inProgress: Boolean = false
+}
+
 // ---- Dashboard ----------------------------------------------------------------------------------------------
 
 class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel() {
@@ -155,6 +161,32 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
         viewModelScope.launch {
             graph.watch.liveHr.collect { s -> _liveHr.value = s }
         }
+        // Foreground-only weather refresh: on connection and hourly while the dashboard is active.
+        // The weather icon is still based on the captured GloryFit condition metadata.
+        viewModelScope.launch {
+            while (isActive) {
+                if (status.value.isConnected() &&
+                    System.currentTimeMillis() - P32WeatherRefreshState.lastSuccessfulSyncMs >= 60 * 60 * 1000L &&
+                    !P32WeatherRefreshState.inProgress
+                ) {
+                    P32WeatherRefreshState.inProgress = true
+                    try {
+                        val forecast = P32WeatherSource.fetch(App.instance)
+                        graph.watch.syncP32Weather(forecast)
+                        P32WeatherRefreshState.lastSuccessfulSyncMs = System.currentTimeMillis()
+                        Log.i(TAG, "P32 automatic temperature sync completed")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Missing permission/location/network must not interrupt watch operations.
+                        Log.w(TAG, "P32 automatic temperature sync skipped", e)
+                    } finally {
+                        P32WeatherRefreshState.inProgress = false
+                    }
+                }
+                delay(60_000L)
+            }
+        }
     }
 
     fun refreshDay() {
@@ -195,6 +227,7 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
     fun syncLiveWeather() = task("Live weather") {
         val temperatures = P32WeatherSource.fetch(App.instance)
         graph.watch.syncP32Weather(temperatures)
+        P32WeatherRefreshState.lastSuccessfulSyncMs = System.currentTimeMillis()
         "Live temperatures sent: ${temperatures[0].first}°C (high ${temperatures[0].second}°, low ${temperatures[0].third}°). Condition icon remains experimental."
     }
 
