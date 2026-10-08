@@ -86,9 +86,10 @@ fun HealthTrendCard(
                     TextButton(onClick = { zoom = 1 }, enabled = zoom != 1) { Text("Reset zoom") }
                 }
                 val scroll = rememberScrollState()
-                Box(Modifier.fillMaxWidth().horizontalScroll(scroll)) {
-                    BoxWithConstraints {
-                        val graphWidth = maxWidth * zoom.toFloat()
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val viewportWidth = maxWidth
+                    Box(Modifier.fillMaxWidth().horizontalScroll(scroll)) {
+                        val graphWidth = viewportWidth * zoom.toFloat()
                         Canvas(Modifier.width(graphWidth).height(210.dp)) {
                             val top = 12.dp.toPx()
                             val bottom = size.height - 14.dp.toPx()
