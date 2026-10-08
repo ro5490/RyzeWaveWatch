@@ -16,7 +16,7 @@ object UiDefaults {
     val SPO2_INTERVALS = listOf(5, 10, 20, 30, 60)
     val HR_HIGH_ALARMS = listOf(140, 150, 160, 170, 180)   // watch buzzes when HR rises above the chosen value
     val HR_LOW_ALARMS = listOf(40, 45, 50, 55, 60, 65, 70) // watch buzzes when HR falls below it (kept well under sleeping HR)
-    val HISTORY_RANGES = listOf(7, 30)
+    val HISTORY_RANGES = listOf(7, 30, 365)
 }
 
 /** The watch MAC as typed in Settings > Watch: normalised (trimmed, upper-cased) only when compared and saved. */
