@@ -174,7 +174,8 @@ fun DashboardScreen(
                 now,
                 onConnect,
                 vm::disconnect,
-                vm::sync
+                vm::sync,
+                vm::replayWeather
             )
 
             StepsCard(
@@ -298,6 +299,7 @@ private fun ConnectionCard(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onSync: () -> Unit,
+    onReplayWeather: () -> Unit,
 ) {
     val working =
         busy ||
@@ -454,6 +456,12 @@ private fun ConnectionCard(
                             !working
                 ) {
                     Text("Sync now")
+                }
+                OutlinedButton(
+                    onClick = onReplayWeather,
+                    enabled = status.isConnected() && !working
+                ) {
+                    Text("Test P32 weather (captured)")
                 }
             }
         }

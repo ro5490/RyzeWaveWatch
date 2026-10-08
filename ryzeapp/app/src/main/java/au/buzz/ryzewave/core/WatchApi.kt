@@ -58,6 +58,9 @@ interface WatchApi {
     /** Fetch steps, HR, SpO2 and sleep history since the last sync and persist them through the repository. */
     suspend fun syncAll(): SyncResult
 
+    /** Diagnostic only: replay the captured GloryFit forecast; not live weather. */
+    suspend fun replayCapturedWeather() { throw UnsupportedOperationException("Weather replay unavailable") }
+
     suspend fun startLiveHr()
     suspend fun stopLiveHr()
 

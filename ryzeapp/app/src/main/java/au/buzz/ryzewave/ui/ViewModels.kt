@@ -192,6 +192,11 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
         null
     }
 
+    fun replayWeather() = task("Weather test") {
+        graph.watch.replayCapturedWeather()
+        "Captured GloryFit weather replay sent (historical data, not live weather)"
+    }
+
     fun sync() = task("Sync") {
         val r = graph.watch.syncAll()
         r.error?.let { "Sync problem: $it" }
