@@ -31,91 +31,76 @@ fun HealthRangePicker(days: Int, onChange: (Int) -> Unit) {
     }
 }
 
-/** Missing days remain gaps, never zero measurements. Year view groups into 12 approximately monthly buckets. */
+/** Longer periods reuse the exact Day chart renderer and card. */
 @Composable
 fun HealthTrendCard(
-    title: String,
-    selectedDay: Long,
-    rangeDays: Int,
-    hr: List<HrSample>,
-    sleep: List<SleepStage>,
-    heartRate: Boolean,
+    title: String, selectedDay: Long, rangeDays: Int,
+    hr: List<HrSample>, sleep: List<SleepStage>, heartRate: Boolean,
 ) {
     val count = if (rangeDays == 365) 12 else rangeDays
-    val values = Array<Double?>(count) { null }
     val start = Fmt.plusDays(selectedDay, 1L - rangeDays)
+    val zone = java.time.ZoneId.systemDefault()
+    val startDate = java.time.Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
     fun bucket(day: Long): Int {
-        val elapsed = java.time.temporal.ChronoUnit.DAYS.between(
-            java.time.Instant.ofEpochMilli(start).atZone(java.time.ZoneId.systemDefault()).toLocalDate(),
-            java.time.Instant.ofEpochMilli(day).atZone(java.time.ZoneId.systemDefault()).toLocalDate(),
-        ).toInt()
+        val date = java.time.Instant.ofEpochMilli(day).atZone(zone).toLocalDate()
+        val elapsed = java.time.temporal.ChronoUnit.DAYS.between(startDate, date).toInt()
         return if (rangeDays == 365) elapsed * 12 / 365 else elapsed
     }
+    val values = Array<Double?>(count) { null }
     if (heartRate) {
-        val groups = hr.filter { it.bpm > 0 }.groupBy { bucket(it.time) }
-        for ((i, rows) in groups) if (i in 0 until count) values[i] = rows.map { it.bpm }.average()
+        hr.filter { it.bpm > 0 }.groupBy { bucket(it.time) }.forEach { (i, rows) ->
+            if (i in 0 until count) values[i] = rows.map { it.bpm }.average()
+        }
     } else {
-        // A night is attributed to its wake-up day (noon-to-noon).
         val minutes = DoubleArray(count)
         val present = BooleanArray(count)
-        for (stage in sleep) {
-            if (stage.stage == SleepStage.AWAKE || stage.minutes <= 0) continue
-            val wakeDay = Fmt.dayStart(stage.start + 12L * 60 * 60 * 1000)
-            val i = bucket(wakeDay)
-            if (i in 0 until count) {
-                minutes[i] = minutes[i] + stage.minutes.toDouble()
-                present[i] = true
+        sleep.forEach { stage ->
+            if (stage.stage != SleepStage.AWAKE && stage.minutes > 0) {
+                val i = bucket(Fmt.dayStart(stage.start + 12L * 60 * 60 * 1000))
+                if (i in 0 until count) {
+                    minutes[i] = minutes[i] + stage.minutes.toDouble()
+                    present[i] = true
+                }
             }
         }
         for (i in 0 until count) if (present[i]) values[i] = minutes[i] / 60.0
     }
     val valid = values.filterNotNull()
-    val maximum = max(if (heartRate) 120.0 else 10.0, (valid.maxOrNull() ?: 0.0) * 1.1)
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("$title · ${if (rangeDays == 365) "Year" else if (rangeDays == 30) "Month" else "Week"}", style = MaterialTheme.typography.titleMedium)
-            if (valid.isEmpty()) Text("No recorded data in this period")
-            else {
-                Text("${valid.size} periods with data · average ${"%.1f".format(valid.average())} ${if (heartRate) "bpm" else "h asleep"}")
-                val color = MaterialTheme.colorScheme.primary
-                val gridColor = MaterialTheme.colorScheme.outlineVariant
-                var zoom by remember(rangeDays, heartRate) { mutableIntStateOf(1) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { zoom = (zoom - 1).coerceAtLeast(1) }, enabled = zoom > 1) { Text("−") }
-                    OutlinedButton(onClick = { zoom = (zoom + 1).coerceAtMost(8) }, enabled = zoom < 8) { Text("+") }
-                    TextButton(onClick = { zoom = 1 }, enabled = zoom != 1) { Text("Reset zoom") }
-                }
-                val scroll = rememberScrollState()
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val viewportWidth = maxWidth
-                    Box(Modifier.fillMaxWidth().horizontalScroll(scroll)) {
-                        val graphWidth = viewportWidth * zoom.toFloat()
-                        Canvas(Modifier.width(graphWidth).height(210.dp)) {
-                            val top = 12.dp.toPx()
-                            val bottom = size.height - 14.dp.toPx()
-                            val graphHeight = bottom - top
-                            for (j in 0..4) {
-                                val y = top + graphHeight * j / 4f
-                                drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
-                            }
-                            val dx = if (count > 1) size.width / (count - 1) else 0f
-                            val radius = 3.dp.toPx()
-                            var previous: Offset? = null
-                            values.forEachIndexed { i, value ->
-                                if (value == null) {
-                                    previous = null // Never join a gap in recorded data.
-                                } else {
-                                    val point = Offset(i * dx, bottom - (value / maximum).toFloat() * graphHeight)
-                                    previous?.let { drawLine(color, it, point, strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round) }
-                                    drawCircle(color, radius, point)
-                                    previous = point
-                                }
-                            }
-                        }
-                    }
-                }
-                Text(if (rangeDays == 365) "12 chronological periods · oldest to newest" else "Daily values · oldest to newest", style = MaterialTheme.typography.bodySmall)
-            }
+    val end = Fmt.plusDays(selectedDay, 1)
+    val periodName = when (rangeDays) { 7 -> "Week"; 30 -> "Month"; else -> "Year" }
+    val timestamps = (0 until count).map { i ->
+        if (rangeDays == 365) Fmt.plusDays(start, i * 365L / 12)
+        else Fmt.plusDays(start, i.toLong())
+    }
+    val points = values.mapIndexedNotNull { i, v -> v?.let { Pt(timestamps[i], it) } }
+    val ticks = (0 until count).filter { i ->
+        count <= 7 || i == 0 || i == count - 1 ||
+            i % (if (count == 12) 2 else 5) == 0
+    }.map { i ->
+        val date = java.time.Instant.ofEpochMilli(timestamps[i]).atZone(zone).toLocalDate()
+        val label = if (rangeDays == 365) date.month.name.take(3).lowercase()
+            .replaceFirstChar { it.uppercase() }
+        else "${date.dayOfMonth}/${date.monthValue}"
+        timestamps[i].toDouble() to label
+    }
+    val unit = if (heartRate) "bpm" else "h"
+    val stats = if (valid.isEmpty()) emptyList() else listOf(
+        "Minimum" to "${"%.1f".format(valid.minOrNull())} $unit",
+        "Average" to "${"%.1f".format(valid.average())} $unit",
+        "Maximum" to "${"%.1f".format(valid.maxOrNull())} $unit",
+    )
+    val rows = values.mapIndexedNotNull { i, v ->
+        v?.let {
+            val date = java.time.Instant.ofEpochMilli(timestamps[i]).atZone(zone).toLocalDate()
+            date.toString() to "${"%.1f".format(it)} $unit"
         }
+    }
+    ChartCard(
+        title = "$title · $periodName",
+        container = if (heartRate) MaterialTheme.colorScheme.errorContainer
+                    else MaterialTheme.colorScheme.secondaryContainer,
+        stats = stats, rowsTitle = "$periodName data", rows = rows,
+    ) { colors ->
+        HealthPeriodLineChart(points, start, end, ticks, heartRate, colors)
     }
 }

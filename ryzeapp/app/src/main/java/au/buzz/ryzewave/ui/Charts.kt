@@ -749,3 +749,31 @@ fun SleepHypnogram(
         }
     }
 }
+
+
+/** Longer-period health trends rendered by the SAME chart engine as the Day heart-rate view. */
+@Composable
+fun HealthPeriodLineChart(
+    points: List<Pt>,
+    start: Long,
+    end: Long,
+    ticks: List<Pair<Double, String>>,
+    heartRate: Boolean,
+    colors: ChartColors = chartColors(),
+) {
+    TimeLineChart(
+        series = points, samples = emptyList(),
+        xMin = start, xMax = end,
+        yMin = if (heartRate) 40.0 else 0.0,
+        gridValues = if (heartRate) listOf(40.0, 75.0, 110.0, 145.0, 180.0)
+                     else listOf(0.0, 3.0, 6.0, 9.0, 12.0),
+        xTicks = ticks,
+        unit = if (heartRate) "bpm" else "h",
+        maxGapMs = if (heartRate) 2L * ChartData.HOUR_MS * 24
+                   else 2L * ChartData.HOUR_MS * 24,
+        showAvg = true,
+        emptyText = "No recorded data in this period",
+        colors = colors,
+        modifier = Modifier,
+    )
+}
