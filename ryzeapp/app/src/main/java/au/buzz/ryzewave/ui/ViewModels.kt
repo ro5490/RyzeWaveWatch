@@ -231,6 +231,11 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
         "Live temperatures sent: ${forecast.temperatures[0].first}°C (high ${forecast.temperatures[0].second}°, low ${forecast.temperatures[0].third}°). Condition codes are experimental."
     }
 
+    fun testWeatherByte(offset: Int, code: Int) = task("Weather byte test") {
+        val transmitted = graph.watch.testP32WeatherByte(offset, code)
+        "P32 byte $offset = $code sent (42°C, high 47°C). TX: $transmitted"
+    }
+
     fun testWeatherCondition(code: Int) = task("Weather condition test") {
         require(code in 1..12)
         val forecast = P32WeatherSource.fetch(App.instance)

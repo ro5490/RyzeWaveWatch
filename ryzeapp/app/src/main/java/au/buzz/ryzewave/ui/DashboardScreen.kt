@@ -177,7 +177,7 @@ fun DashboardScreen(
                 vm::disconnect,
                 vm::sync,
                 vm::syncLiveWeather,
-                vm::testWeatherCondition
+                vm::testWeatherByte
             )
 
             StepsCard(
@@ -302,9 +302,10 @@ private fun ConnectionCard(
     onDisconnect: () -> Unit,
     onSync: () -> Unit,
     onReplayWeather: () -> Unit,
-    onTestWeatherCondition: (Int) -> Unit,
+    onTestWeatherCondition: (Int, Int) -> Unit,
 ) {
     var testCondition by remember { mutableIntStateOf(1) }
+    var testOffset by remember { mutableIntStateOf(8) }
     val working =
         busy ||
             status.state ==
@@ -492,8 +493,19 @@ private fun ConnectionCard(
                     enabled = !working && testCondition < 12
                 ) { Text("+") }
             }
+            Text("CB01 byte offset (zero-based): $testOffset", style = MaterialTheme.typography.labelMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = { if (testOffset > 7) testOffset-- }, enabled = !working && testOffset > 7) { Text("−") }
+                Text("$testOffset / 18")
+                OutlinedButton(onClick = { if (testOffset < 18) testOffset++ }, enabled = !working && testOffset < 18) { Text("+") }
+            }
+            Text("Diagnostic sends 42°C (high 47°C); only selected CB01 byte changes. Normal sync restores live weather.", style = MaterialTheme.typography.bodySmall)
             Button(
-                onClick = { onTestWeatherCondition(testCondition) },
+                onClick = { onTestWeatherCondition(testOffset, testCondition) },
                 enabled = status.isConnected() && !working,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Test selected condition") }

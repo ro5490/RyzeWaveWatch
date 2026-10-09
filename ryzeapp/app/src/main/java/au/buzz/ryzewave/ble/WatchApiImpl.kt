@@ -120,6 +120,41 @@ class WatchApiImpl(
         }
     }
 
+    /** Isolated first-packet diagnostic. Only one selected byte is changed. */
+    override suspend fun testP32WeatherByte(offset: Int, code: Int): String {
+        requireReady()
+        check(supportsP32WeatherReplay()) { "Weather diagnostic is P32-only" }
+        require(offset in 7..18) { "Diagnostic offset must be 7..18" }
+        require(code in 1..12) { "Diagnostic code must be 1..12" }
+        val hexPackets = listOf(
+            "CB0107000B0F09000100500000000000000000",
+            "CB020700120A02000F0907000E090700150E",
+            "CB030700140E0700120B",
+        )
+        val packets = hexPackets.map { hex ->
+            ByteArray(hex.length / 2) { i -> hex.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
+        }
+        packets[0][4] = 42.toByte()
+        packets[0][5] = 47.toByte()
+        packets[0][6] = 9.toByte()
+        packets[0][offset] = code.toByte()
+        val sent = packets.joinToString(" | ") { bytes ->
+            bytes.joinToString("") { "%02X".format(it.toInt() and 255) }
+        }
+        syncMutex.withLock {
+            packets.forEachIndexed { index, bytes ->
+                val ack = link.request(
+                    bytes,
+                    pred = { response -> response.size >= 2 && (response[0].toInt() and 255) == 0xCB && (response[1].toInt() and 255) == index + 1 },
+                    timeoutMs = 5_000L,
+                )
+                log("weather byte test ACK ${index + 1}: ${ack.joinToString("") { "%02X".format(it.toInt() and 255) }}", null)
+            }
+        }
+        log("weather byte test offset=$offset code=$code TX=$sent", null)
+        return sent
+    }
+
     override suspend fun syncP32Weather(temperatures: List<Triple<Int, Int, Int>>, conditions: List<Int>) {
         requireReady()
         check(supportsP32WeatherReplay()) { "Weather sync is P32-only" }
