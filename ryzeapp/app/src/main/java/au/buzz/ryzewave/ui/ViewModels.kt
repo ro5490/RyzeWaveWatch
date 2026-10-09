@@ -228,26 +228,7 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
         val forecast = P32WeatherSource.fetch(App.instance)
         graph.watch.syncP32Weather(forecast.temperatures, forecast.conditions)
         P32WeatherRefreshState.lastSuccessfulSyncMs = System.currentTimeMillis()
-        "Live temperatures sent: ${forecast.temperatures[0].first}°C (high ${forecast.temperatures[0].second}°, low ${forecast.temperatures[0].third}°). Condition codes are experimental."
-    }
-
-    fun testWeatherByte(offset: Int, code: Int) = task("Weather byte test") {
-        val transmitted = graph.watch.testP32WeatherByte(offset, code)
-        "P32 byte $offset = $code sent (42°C, high 47°C). TX: $transmitted"
-    }
-
-    fun testWeatherCondition(code: Int) = task("Weather condition test") {
-        require(code in 1..12)
-        val forecast = P32WeatherSource.fetch(App.instance)
-        graph.watch.syncP32Weather(forecast.temperatures, List(7) { code })
-        // Do not reset the automatic refresh interval: a later normal sync should
-        // restore live conditions.
-        "P32 experimental condition code $code sent. Check the watch icon."
-    }
-
-    fun replayWeather() = task("Weather test") {
-        graph.watch.replayCapturedWeather()
-        "Captured GloryFit weather replay sent (historical data, not live weather)"
+        "Live temperatures sent: ${forecast.temperatures[0].first}°C (high ${forecast.temperatures[0].second}°, low ${forecast.temperatures[0].third}°). Weather conditions synchronized."
     }
 
     fun sync() = task("Sync") {

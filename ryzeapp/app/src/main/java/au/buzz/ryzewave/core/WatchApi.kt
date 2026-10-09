@@ -58,11 +58,7 @@ interface WatchApi {
     /** Fetch steps, HR, SpO2 and sleep history since the last sync and persist them through the repository. */
     suspend fun syncAll(): SyncResult
 
-    /** Diagnostic only: replay the captured GloryFit forecast; not live weather. */
-    suspend fun replayCapturedWeather() { throw UnsupportedOperationException("Weather replay unavailable") }
-
-    /** Send current and seven-day Celsius temperatures to P32. Weather icons remain experimental. */
-    suspend fun testP32WeatherByte(offset: Int, code: Int): String { throw UnsupportedOperationException("P32 weather diagnostic unavailable") }
+    /** Synchronize current and seven-day weather using verified P32 condition codes. */
     suspend fun syncP32Weather(temperatures: List<Triple<Int, Int, Int>>, conditions: List<Int> = List(7) { 1 }) { throw UnsupportedOperationException("P32 weather unavailable") }
 
     suspend fun startLiveHr()

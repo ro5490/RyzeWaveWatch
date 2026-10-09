@@ -34,7 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -176,8 +175,7 @@ fun DashboardScreen(
                 onConnect,
                 vm::disconnect,
                 vm::sync,
-                vm::syncLiveWeather,
-                vm::testWeatherByte
+                vm::syncLiveWeather
             )
 
             StepsCard(
@@ -302,9 +300,7 @@ private fun ConnectionCard(
     onDisconnect: () -> Unit,
     onSync: () -> Unit,
     onReplayWeather: () -> Unit,
-    onTestWeatherCondition: (Int, Int) -> Unit,
 ) {
-    var testCondition by remember { mutableIntStateOf(1) }
     val working =
         busy ||
             status.state ==
@@ -473,32 +469,7 @@ private fun ConnectionCard(
                 Text("Sync weather")
             }
 
-            Text(
-                "Condition code tester (GloryFit mapping)",
-                style = MaterialTheme.typography.labelMedium
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(
-                    onClick = { if (testCondition > 1) testCondition-- },
-                    enabled = !working && testCondition > 1
-                ) { Text("−") }
-                Text("$testCondition / 12")
-                OutlinedButton(
-                    onClick = { if (testCondition < 12) testCondition++ },
-                    enabled = !working && testCondition < 12
-                ) { Text("+") }
-            }
-            Text("Verified GloryFit condition position: CB01 byte 2.", style = MaterialTheme.typography.labelMedium)
-            Text("Diagnostic sends 42°C (high 47°C) with the selected condition code. Normal sync restores live weather.", style = MaterialTheme.typography.bodySmall)
-            Button(
-                onClick = { onTestWeatherCondition(2, testCondition) },
-                enabled = status.isConnected() && !working,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Test selected condition") }
+
         }
     }
 }
