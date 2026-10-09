@@ -302,8 +302,8 @@ fun Protocol.encFetchHr24Since(sinceEpochMillis: Long?, withTs: Boolean = true, 
     encFetchHr24(sinceEpochMillis?.let { localDateTimeOf(it, zone) }, withTs)
 
 /** `A9` from the app's profile (raise-wrist / HR alert thresholds are not part of [UserProfile]; defaults apply). */
-fun Protocol.encUserInfo(profile: UserProfile, raiseWrist: Boolean = true, hrHigh: Int = 0, hrLow: Int = 0): ByteArray =
-    encUserInfo(profile.heightCm, profile.weightKg, profile.stepGoal, profile.age, profile.male, raiseWrist, hrHigh, hrLow, true)
+fun Protocol.encUserInfo(profile: UserProfile, raiseWrist: Boolean = true, hrHigh: Int = 0, hrLow: Int = 0, displaySeconds: Int = 5): ByteArray =
+    encUserInfo(profile.heightCm, profile.weightKg, profile.stepGoal, profile.age, profile.male, raiseWrist, hrHigh, hrLow, true, displaySeconds)
 
 // ---------------------------------------------------------------------- conversions to the core models
 

@@ -369,6 +369,7 @@ class WatchApiImpl(
                 raiseWrist = sampling.raiseWristWake,
                 hrHigh = sampling.hrHighAlarmBpm,
                 hrLow = sampling.hrLowAlarmBpm,
+                displaySeconds = settings.displayTimeoutSeconds.first(),
             ),
             Matchers.opcodeIs(
                 Protocol.CMD_USER_INFO

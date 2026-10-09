@@ -128,6 +128,15 @@ interface SettingsStore {
     suspend fun setStuckDetectorEnabled(on: Boolean) {}
     suspend fun setStuckAutoStopAppWorkouts(on: Boolean) {}
 
+    val displayTimeoutSeconds: Flow<Int> get() = flowOf(5)
+    suspend fun setDisplayTimeoutSeconds(seconds: Int) {}
+    val quietHoursEnabled: Flow<Boolean> get() = flowOf(false)
+    val quietHoursStart: Flow<Int> get() = flowOf(22)
+    val quietHoursEnd: Flow<Int> get() = flowOf(7)
+    suspend fun setQuietHours(enabled: Boolean, startHour: Int, endHour: Int) {}
+    val weatherIntervalHours: Flow<Int> get() = flowOf(1)
+    suspend fun setWeatherIntervalHours(hours: Int) {}
+
     companion object {
         const val DEFAULT_WORKOUT_SPORT_TYPE = 1
     }

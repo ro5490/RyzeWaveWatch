@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 
 /** The one Preferences DataStore of the app: file `settings.preferences_pb` in the app's datastore dir. */
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -36,6 +37,58 @@ class DataStoreSettingsStore(private val dataStore: DataStore<Preferences>) : Se
 
     private val prefs: Flow<Preferences> = dataStore.data.catch { e ->
         if (e is IOException) emit(emptyPreferences()) else throw e
+    }
+
+    override val displayTimeoutSeconds: Flow<Int> = prefs.map { it[SettingsKeys.DISPLAY_TIMEOUT] ?: 5 }.distinctUntilChanged()
+    override suspend fun setDisplayTimeoutSeconds(seconds: Int) { require(seconds in 5..30 && seconds % 5 == 0); dataStore.edit { it[SettingsKeys.DISPLAY_TIMEOUT] = seconds } }
+    override val quietHoursEnabled: Flow<Boolean> = prefs.map { it[SettingsKeys.QUIET_ENABLED] ?: false }.distinctUntilChanged()
+    override val quietHoursStart: Flow<Int> = prefs.map { it[SettingsKeys.QUIET_START] ?: 22 }.distinctUntilChanged()
+    override val quietHoursEnd: Flow<Int> = prefs.map { it[SettingsKeys.QUIET_END] ?: 7 }.distinctUntilChanged()
+    override suspend fun setQuietHours(enabled: Boolean, startHour: Int, endHour: Int) { require(startHour in 0..23 && endHour in 0..23); dataStore.edit { it[SettingsKeys.QUIET_ENABLED] = enabled; it[SettingsKeys.QUIET_START] = startHour; it[SettingsKeys.QUIET_END] = endHour } }
+    override val weatherIntervalHours: Flow<Int> = prefs.map { it[SettingsKeys.WEATHER_INTERVAL] ?: 1 }.distinctUntilChanged()
+    override suspend fun setWeatherIntervalHours(hours: Int) { require(hours in listOf(1, 2, 3, 6, 12)); dataStore.edit { it[SettingsKeys.WEATHER_INTERVAL] = hours } }
+    /** Versioned, complete DataStore snapshot including future supported primitive preferences. */
+    suspend fun exportJson(): String {
+        val p = prefs.first()
+        val values = org.json.JSONObject()
+        for ((key, value) in p.asMap()) {
+            val obj = org.json.JSONObject()
+            when (value) {
+                is Boolean -> { obj.put("type", "boolean"); obj.put("value", value) }
+                is Int -> { obj.put("type", "int"); obj.put("value", value) }
+                is Long -> { obj.put("type", "long"); obj.put("value", value) }
+                is Float -> { obj.put("type", "float"); obj.put("value", value.toDouble()) }
+                is Double -> { obj.put("type", "double"); obj.put("value", value) }
+                is String -> { obj.put("type", "string"); obj.put("value", value) }
+                is Set<*> -> { obj.put("type", "strings"); obj.put("value", org.json.JSONArray(value.filterIsInstance<String>().sorted())) }
+                else -> continue
+            }
+            values.put(key.name, obj)
+        }
+        return org.json.JSONObject().put("format", "smarttrax-settings").put("version", 1).put("exportedAt", System.currentTimeMillis()).put("settings", values).toString(2)
+    }
+    suspend fun importJson(json: String) {
+        require(json.length <= 1_000_000) { "Backup too large" }
+        val root = org.json.JSONObject(json)
+        require(root.getString("format") == "smarttrax-settings" && root.getInt("version") == 1) { "Unsupported backup format" }
+        val entries = root.getJSONObject("settings")
+        require(entries.length() <= 200) { "Too many settings" }
+        dataStore.edit { prefs ->
+            prefs.clear()
+            for (name in entries.keys()) {
+                val obj = entries.getJSONObject(name)
+                when (obj.getString("type")) {
+                    "boolean" -> prefs[booleanPreferencesKey(name)] = obj.getBoolean("value")
+                    "int" -> prefs[intPreferencesKey(name)] = obj.getInt("value")
+                    "long" -> prefs[androidx.datastore.preferences.core.longPreferencesKey(name)] = obj.getLong("value")
+                    "float" -> prefs[androidx.datastore.preferences.core.floatPreferencesKey(name)] = obj.getDouble("value").toFloat()
+                    "double" -> prefs[doublePreferencesKey(name)] = obj.getDouble("value")
+                    "string" -> prefs[stringPreferencesKey(name)] = obj.getString("value")
+                    "strings" -> { val arr = obj.getJSONArray("value"); prefs[stringSetPreferencesKey(name)] = (0 until arr.length()).map { arr.getString(it) }.toSet() }
+                    else -> error("Unsupported setting type")
+                }
+            }
+        }
     }
 
     override val watchMac: Flow<String?> =
@@ -138,6 +191,11 @@ class DataStoreSettingsStore(private val dataStore: DataStore<Preferences>) : Se
  * mapping is unit-testable; [DataStoreSettingsStore] is a thin wrapper around these.
  */
 object SettingsKeys {
+    val DISPLAY_TIMEOUT = intPreferencesKey("display_timeout_seconds")
+    val QUIET_ENABLED = booleanPreferencesKey("quiet_hours_enabled")
+    val QUIET_START = intPreferencesKey("quiet_hours_start")
+    val QUIET_END = intPreferencesKey("quiet_hours_end")
+    val WEATHER_INTERVAL = intPreferencesKey("weather_interval_hours")
     val WATCH_MAC = stringPreferencesKey("watch_mac")
 
     val HEIGHT_CM = intPreferencesKey("height_cm")

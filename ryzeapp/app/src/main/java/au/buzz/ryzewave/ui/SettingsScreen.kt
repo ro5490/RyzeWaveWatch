@@ -4,6 +4,14 @@ package au.buzz.ryzewave.ui
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import au.buzz.ryzewave.App
+import au.buzz.ryzewave.data.DataStoreSettingsStore
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import android.provider.Settings
 import android.util.Log
 import androidx.compose.runtime.DisposableEffect
@@ -65,6 +73,43 @@ import java.util.Locale
 
 @Composable
 fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val settingsStore = remember { DataStoreSettingsStore(context) }
+    var backupMessage by remember { mutableStateOf("") }
+    var pendingImport by remember { mutableStateOf<String?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) scope.launch {
+            runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(settingsStore.exportJson().toByteArray(Charsets.UTF_8)) } ?: error("Unable to open file") }
+                .onSuccess { backupMessage = "Settings exported" }.onFailure { backupMessage = "Export failed: ${it.message}" }
+        }
+    }
+    val diagnosticsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri != null) scope.launch {
+            runCatching {
+                val report = buildString {
+                    appendLine("SmartTrax diagnostic summary (no watch MAC or personal profile)")
+                    appendLine("Generated: ${java.time.Instant.now()}")
+                    appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
+                    appendLine("App: ${context.packageName}")
+                    appendLine("Notification listener granted: ${WatchNotificationListener.isAccessGranted(context)}")
+                    appendLine("Note: no raw BLE logs or health records are included")
+                }
+                context.contentResolver.openOutputStream(uri)?.use { it.write(report.toByteArray()) } ?: error("Unable to open file")
+            }.onSuccess { backupMessage = "Diagnostic summary exported" }.onFailure { backupMessage = "Diagnostics failed: ${it.message}" }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("Unable to read file") }
+                .onSuccess { pendingImport = it }.onFailure { backupMessage = "Import failed: ${it.message}" }
+        }
+    }
+    val timeout by vm.displayTimeout.collectAsStateWithLifecycle()
+    val quietEnabled by vm.quietEnabled.collectAsStateWithLifecycle()
+    val quietStart by vm.quietStart.collectAsStateWithLifecycle()
+    val quietEnd by vm.quietEnd.collectAsStateWithLifecycle()
+    val weatherInterval by vm.weatherInterval.collectAsStateWithLifecycle()
     val mac by vm.mac.collectAsStateWithLifecycle()
     val profile by vm.profile.collectAsStateWithLifecycle()
     val sampling by vm.sampling.collectAsStateWithLifecycle()
@@ -119,6 +164,50 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
                 onSave = vm::saveMac, onScan = vm::startScan, onStopScan = vm::stopScan,
                 onChoose = vm::chooseDevice, onFind = vm::findWatch,
             )
+            SectionCard("Display timeout") {
+                Text("How long the watch screen stays on after waking")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (5..30 step 5).forEach { seconds ->
+                        FilterChip(selected = timeout == seconds, onClick = { vm.setDisplayTimeout(seconds) }, label = { Text("${seconds}s") })
+                    }
+                }
+            }
+            SectionCard("Quiet hours") {
+                SwitchRow("Pause notification forwarding", quietEnabled, onChange = { vm.setQuietHours(it, quietStart, quietEnd) })
+                Text("From $quietStart:00 to $quietEnd:00 (phone local time)")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(20, 21, 22, 23, 0, 1).forEach { hour -> FilterChip(selected = quietStart == hour, onClick = { vm.setQuietHours(quietEnabled, hour, quietEnd) }, label = { Text("Start $hour:00") }) }
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(5, 6, 7, 8, 9, 10).forEach { hour -> FilterChip(selected = quietEnd == hour, onClick = { vm.setQuietHours(quietEnabled, quietStart, hour) }, label = { Text("End $hour:00") }) }
+                }
+            }
+            SectionCard("Weather updates") {
+                Text("Refresh while the dashboard is open and the watch is connected")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1, 2, 3, 6, 12).forEach { hours -> FilterChip(selected = weatherInterval == hours, onClick = { vm.setWeatherInterval(hours) }, label = { Text("${hours}h") }) }
+                }
+            }
+            SectionCard("Settings backup and restore") {
+                Text("Exports all saved preferences, including the watch address, profile, sampling, notification app list, stride, workout safety, and GPS options. Keep this file private.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { exportLauncher.launch("SmartTrax-settings-${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))}.json") }) { Text("Export settings") }
+                    OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }) { Text("Import settings") }
+                }
+                if (pendingImport != null) {
+                    Text("Restore settings from the selected file? This replaces your current preferences. Android permissions must be granted again after reinstalling.")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { val data = pendingImport!!; pendingImport = null; scope.launch { runCatching { settingsStore.importJson(data) }.onSuccess { backupMessage = "Settings restored. Reconnect your watch to apply settings." }.onFailure { backupMessage = "Restore failed: ${it.message}" } } }) { Text("Confirm restore") }
+                        OutlinedButton(onClick = { pendingImport = null }) { Text("Cancel") }
+                    }
+                }
+                if (backupMessage.isNotEmpty()) Text(backupMessage)
+                Text("Android system backup may also restore preferences automatically, depending on your device and Google backup settings.")
+            }
+            SectionCard("Diagnostics") {
+                Text("Export a privacy-conscious device and permission summary. Raw BLE packets and health records are not included.")
+                OutlinedButton(onClick = { diagnosticsLauncher.launch("SmartTrax-diagnostics.txt") }) { Text("Export diagnostics") }
+            }
             ProfileSection(profile, onSave = vm::saveProfile)
             val watchStatus by au.buzz.ryzewave.App.graph.watch.status.collectAsStateWithLifecycle()
             SamplingSection(sampling, onChange = vm::saveSampling, showSpo2 = !watchStatus.firmware.orEmpty().startsWith("RB112UDG", ignoreCase = true))

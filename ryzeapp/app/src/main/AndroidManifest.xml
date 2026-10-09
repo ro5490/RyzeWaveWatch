@@ -50,7 +50,9 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.RyzeWave"
-        android:allowBackup="false"
+        android:allowBackup="true"
+        android:fullBackupContent="@xml/smarttrax_backup_rules"
+        android:dataExtractionRules="@xml/smarttrax_data_extraction_rules"
         android:supportsRtl="true">
 
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">

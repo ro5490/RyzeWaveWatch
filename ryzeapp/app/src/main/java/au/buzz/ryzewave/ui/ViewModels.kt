@@ -166,7 +166,7 @@ class DashboardViewModel(private val graph: Graph = App.graph) : RyzeViewModel()
         viewModelScope.launch {
             while (isActive) {
                 if (status.value.isConnected() &&
-                    System.currentTimeMillis() - P32WeatherRefreshState.lastSuccessfulSyncMs >= 60 * 60 * 1000L &&
+                    System.currentTimeMillis() - P32WeatherRefreshState.lastSuccessfulSyncMs >= graph.settings.weatherIntervalHours.first() * 60 * 60 * 1000L &&
                     !P32WeatherRefreshState.inProgress
                 ) {
                     P32WeatherRefreshState.inProgress = true
@@ -810,6 +810,26 @@ class SettingsViewModel(
     private val graph: Graph = App.graph,
     private val scanner: BleScanner = BleScanner(App.instance),
 ) : RyzeViewModel() {
+    val displayTimeout = graph.settings.displayTimeoutSeconds.stateIn(viewModelScope, started(), 5)
+    val quietEnabled = graph.settings.quietHoursEnabled.stateIn(viewModelScope, started(), false)
+    val quietStart = graph.settings.quietHoursStart.stateIn(viewModelScope, started(), 22)
+    val quietEnd = graph.settings.quietHoursEnd.stateIn(viewModelScope, started(), 7)
+    val weatherInterval = graph.settings.weatherIntervalHours.stateIn(viewModelScope, started(), 1)
+    fun setDisplayTimeout(seconds: Int) = task("Display timeout") {
+        graph.settings.setDisplayTimeoutSeconds(seconds)
+        val p = graph.settings.profile.first()
+        val s = graph.settings.sampling.first()
+        if (graph.watch.status.value.isConnected()) graph.watch.applySettings(p, s)
+        "Display timeout set to $seconds seconds"
+    }
+    fun setQuietHours(enabled: Boolean, start: Int, end: Int) = task("Quiet hours") {
+        graph.settings.setQuietHours(enabled, start, end)
+        "Quiet hours saved"
+    }
+    fun setWeatherInterval(hours: Int) = task("Weather interval") {
+        graph.settings.setWeatherIntervalHours(hours)
+        "Weather refresh interval saved"
+    }
     val mac: StateFlow<String> =
         graph.settings.watchMac.map { it ?: UiDefaults.WATCH_MAC }
             .stateIn(viewModelScope, started(), UiDefaults.WATCH_MAC)

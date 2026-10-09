@@ -314,11 +314,11 @@ object Protocol {
      */
     fun encUserInfo(
         heightCm: Int, weightKg: Int, stepGoal: Int, age: Int, male: Boolean,
-        raiseWrist: Boolean = true, hrHigh: Int = 0, hrLow: Int = 0, celsius: Boolean = true,
+        raiseWrist: Boolean = true, hrHigh: Int = 0, hrLow: Int = 0, celsius: Boolean = true, displaySeconds: Int = 5,
     ): ByteArray = bytesOf(
         CMD_USER_INFO,
         heightCm shr 8, heightCm, weightKg shr 8, weightKg,
-        0x05, 0x00, 0x00, stepGoal shr 8, stepGoal,
+        displaySeconds.coerceIn(5, 30), 0x00, 0x00, stepGoal shr 8, stepGoal,
         // byte 11 = high-HR alarm threshold, 0xFF disables it; byte 18 = low-HR alarm threshold, 0 disables it.
         if (raiseWrist) 0x01 else 0x00, if (hrHigh > 0) hrHigh else 0xFF, 0x00, age,
         if (male) 0x01 else 0x02, 0x00, if (celsius) 0x02 else 0x01, 0x01, hrLow.coerceAtLeast(0),

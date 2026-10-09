@@ -9,6 +9,9 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import au.buzz.ryzewave.App
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
+import java.time.LocalTime
 
 /**
  * Receives every notification posted on the phone (once the user has granted notification access) and hands it
@@ -29,6 +32,16 @@ class WatchNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         val n = sbn ?: return
+        val quiet = runCatching { runBlocking {
+            val settings = App.graph.settings
+            if (!settings.quietHoursEnabled.first()) false else {
+                val start = settings.quietHoursStart.first()
+                val end = settings.quietHoursEnd.first()
+                val hour = LocalTime.now().hour
+                if (start == end) true else if (start < end) hour in start until end else hour >= start || hour < end
+            }
+        } }.getOrDefault(false)
+        if (quiet) return
         val notification = n.notification ?: return
         val extras = notification.extras
         val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()
