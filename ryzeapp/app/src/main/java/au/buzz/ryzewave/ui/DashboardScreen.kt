@@ -305,7 +305,6 @@ private fun ConnectionCard(
     onTestWeatherCondition: (Int, Int) -> Unit,
 ) {
     var testCondition by remember { mutableIntStateOf(1) }
-    var testOffset by remember { mutableIntStateOf(8) }
     val working =
         busy ||
             status.state ==
@@ -475,7 +474,7 @@ private fun ConnectionCard(
             }
 
             Text(
-                "Condition code tester (experimental)",
+                "Condition code tester (GloryFit mapping)",
                 style = MaterialTheme.typography.labelMedium
             )
             Row(
@@ -493,19 +492,10 @@ private fun ConnectionCard(
                     enabled = !working && testCondition < 12
                 ) { Text("+") }
             }
-            Text("CB01 byte offset (zero-based): $testOffset", style = MaterialTheme.typography.labelMedium)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(onClick = { if (testOffset > 7) testOffset-- }, enabled = !working && testOffset > 7) { Text("−") }
-                Text("$testOffset / 18")
-                OutlinedButton(onClick = { if (testOffset < 18) testOffset++ }, enabled = !working && testOffset < 18) { Text("+") }
-            }
-            Text("Diagnostic sends 42°C (high 47°C); only selected CB01 byte changes. Normal sync restores live weather.", style = MaterialTheme.typography.bodySmall)
+            Text("Verified GloryFit condition position: CB01 byte 2.", style = MaterialTheme.typography.labelMedium)
+            Text("Diagnostic sends 42°C (high 47°C) with the selected condition code. Normal sync restores live weather.", style = MaterialTheme.typography.bodySmall)
             Button(
-                onClick = { onTestWeatherCondition(testOffset, testCondition) },
+                onClick = { onTestWeatherCondition(2, testCondition) },
                 enabled = status.isConnected() && !working,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Test selected condition") }

@@ -124,7 +124,7 @@ class WatchApiImpl(
     override suspend fun testP32WeatherByte(offset: Int, code: Int): String {
         requireReady()
         check(supportsP32WeatherReplay()) { "Weather diagnostic is P32-only" }
-        require(offset in 7..18) { "Diagnostic offset must be 7..18" }
+        require(offset == 2) { "GloryFit condition byte is CB01 offset 2" }
         require(code in 1..12) { "Diagnostic code must be 1..12" }
         val hexPackets = listOf(
             "CB0107000B0F09000100500000000000000000",
@@ -160,8 +160,8 @@ class WatchApiImpl(
         check(supportsP32WeatherReplay()) { "Weather sync is P32-only" }
         require(temperatures.size == 7) { "Seven forecast days required" }
         require(conditions.size == 7 && conditions.all { it in 1..12 }) { "Seven P32 condition codes (1..12) required" }
-        // Preserve the confirmed GloryFit packet framing and unknown condition/metadata fields.
-        // Only temperature bytes are replaced; icon/condition decoding needs more captures.
+        // GloryFit WriteCommandToBLE.syncWeatherToBLEForXiaoYang uses condition
+        // at byte 2 for today, and bytes 2/6/10/14 and 2/6 for later days.
         val packets = listOf(
             "CB0107000B0F09000100500000000000000000",
             "CB020700120A02000F0907000E090700150E",
@@ -169,7 +169,7 @@ class WatchApiImpl(
         ).map { hex -> ByteArray(hex.length / 2) { i -> hex.substring(i * 2, i * 2 + 2).toInt(16).toByte() } }
         fun set(packet: Int, offset: Int, value: Int) {
             require(value in -40..85) { "Weather temperature outside supported test range: $value" }
-            packets[packet][offset] = value.toByte()
+            packets[packet][offset] = (if (value < 0) ((-value) or 0x80) else value).toByte()
         }
         set(0, 4, temperatures[0].first)
         set(0, 5, temperatures[0].second)
@@ -185,13 +185,9 @@ class WatchApiImpl(
             set(2, offset, temperatures[day].second)
             set(2, offset + 1, temperatures[day].third)
         }
-        // Candidate condition positions. The original capture does not fully establish
-        // the day-to-byte mapping; keep manual testing available for validation.
-        packets[0][8] = conditions[0].toByte()
-        packets[1][6] = conditions[1].toByte()
-        packets[1][10] = conditions[2].toByte()
-        packets[1][14] = conditions[3].toByte()
-        packets[2][6] = conditions[5].toByte()
+        packets[0][2] = conditions[0].toByte()
+        for (day in 1..4) packets[1][2 + (day - 1) * 4] = conditions[day].toByte()
+        for (day in 5..6) packets[2][2 + (day - 5) * 4] = conditions[day].toByte()
         syncMutex.withLock {
             packets.forEachIndexed { index, bytes ->
                 link.request(bytes, pred = { p -> p.size >= 2 && (p[0].toInt() and 255) == 0xCB && (p[1].toInt() and 255) == index + 1 }, timeoutMs = 5_000L)

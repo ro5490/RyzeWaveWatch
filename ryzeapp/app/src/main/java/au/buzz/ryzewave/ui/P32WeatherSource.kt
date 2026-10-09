@@ -16,19 +16,22 @@ import kotlin.math.roundToInt
 internal data class P32Forecast(val temperatures: List<Triple<Int, Int, Int>>, val conditions: List<Int>)
 
 internal object P32WeatherSource {
-    // Experimental P32 mapping. Rain=1 is supported by the captured current-day
-    // packet; other assignments require on-device validation with the tester.
+    /** Open-Meteo WMO codes mapped to GloryFit's 1..12 XiaoYang watch categories.
+     *  The numeric P32 categories and CB offsets come from GloryFit's decompiled SDK.
+     *  WMO-to-category interpretation is approximate because providers differ.
+     */
     fun conditionForWmo(wmo: Int): Int = when (wmo) {
-        0 -> 3  // clear, candidate
-        1, 2 -> 7 // partly cloudy, candidate
-        3 -> 4 // overcast, candidate
-        45, 48 -> 5 // fog, candidate
-        51, 53, 55, 56, 57 -> 6 // drizzle, candidate
-        61, 63, 80, 81 -> 1 // rain, observed baseline
-        65, 82 -> 8 // heavy rain, candidate
-        66, 67 -> 9 // freezing rain, candidate
-        71, 73, 75, 77, 85, 86 -> 10 // snow, candidate
-        95, 96, 99 -> 11 // thunderstorm, candidate
+        0 -> 1                    // clear
+        1, 2 -> 2                 // mainly clear / partly cloudy
+        3, 45, 48 -> 3            // overcast / fog (no dedicated fog category)
+        51, 53, 55, 56, 57 -> 4   // drizzle
+        61, 80 -> 7               // light rain / showers
+        63, 81 -> 5               // moderate rain / showers
+        65, 82 -> 8               // heavy rain / showers
+        66, 67 -> 6               // freezing rain / mixed precipitation
+        71, 73, 77, 85 -> 9       // snow / snow showers
+        75, 86 -> 10              // heavy snow
+        95, 96, 99 -> 12          // thunderstorm
         else -> 1
     }
 
